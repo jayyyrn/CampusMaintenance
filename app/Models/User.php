@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -13,15 +14,38 @@ class User extends Authenticatable
     protected $hidden = ['password','remember_token'];
     protected $casts = ['password' => 'hashed'];
 
-    public function department() { return $this->belongsTo(Department::class, 'department_id', 'dept_id'); }
-    public function requests()   { return $this->hasMany(MaintenanceRequest::class, 'teacher_id', 'user_id'); }
-    public function tasks()      { return $this->hasMany(TaskAssignment::class, 'technician_id', 'user_id'); }
+    // ── Relationships ──
+    public function department()    { return $this->belongsTo(Department::class, 'department_id', 'dept_id'); }
+    public function requests()      { return $this->hasMany(MaintenanceRequest::class, 'teacher_id', 'user_id'); }
+    public function tasks()         { return $this->hasMany(TaskAssignment::class, 'technician_id', 'user_id'); }
     public function notifications() { return $this->hasMany(Notification::class, 'user_id', 'user_id'); }
 
+    // ── Role Checks ──
     public function isTeacher()          { return $this->role === 'teacher'; }
     public function isTechnician()       { return in_array($this->role, ['technician','lead_technician']); }
-    public function isSupervisor()       { return in_array($this->role, ['lead_technician','coordinator','admin']); }
-    public function isInventoryOfficer() { return $this->role === 'inventory_officer'; }  // ✅ admin removed
+    public function isInventoryOfficer() { return $this->role === 'inventory_officer'; }
     public function isAdmin()            { return $this->role === 'admin'; }
     public function isCoordinator()      { return $this->role === 'coordinator'; }
+    public function isLeadTechnician()   { return $this->role === 'lead_technician'; }
+    public function isSupervisor()       { return in_array($this->role, ['lead_technician','coordinator','admin']); }
+
+    // ── Helpers ──
+    public function unreadNotificationsCount(): int
+    {
+        return cache()->remember(
+            "notif_unread_{$this->user_id}",
+            now()->addSeconds(30),
+            fn() => $this->notifications()->where('is_read', false)->count()
+        );
+    }
+
+    public function getInitialsAttribute(): string
+    {
+        $parts = preg_split('/\s+/', trim($this->full_name ?? ''));
+        $first = $parts[0] ?? '';
+        $last  = end($parts) ?: '';
+        return strtoupper(
+            substr($first, 0, 1) . ($last !== $first ? substr($last, 0, 1) : '')
+        ) ?: '?';
+    }
 }
