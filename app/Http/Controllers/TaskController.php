@@ -123,6 +123,101 @@ class TaskController extends Controller
         }
     }
 
+    /**
+     * Move a task to a new status column (drag-and-drop).
+     * Returns JSON so the board can optimistically update.
+     */
+    public function move(Request $request, $id)
+    {
+        $data = $request->validate([
+            'status' => 'required|in:pending,in_progress,for_review,completed',
+        ]);
+
+        $task = TaskAssignment::where('assignment_id', $id)
+            ->where('technician_id', $request->user()->user_id)
+            ->firstOrFail();
+
+        $old = $task->status;
+
+        // No-op if same column
+        if ($old === $data['status']) {
+            return response()->json([
+                'ok'        => true,
+                'unchanged' => true,
+                'task_id'   => (int) $id,
+                'status'    => $old,
+            ]);
+        }
+
+        DB::beginTransaction();
+        try {
+            $update = ['status' => $data['status']];
+
+            if ($data['status'] === 'in_progress' && !$task->started_at) {
+                $update['started_at'] = now();
+            }
+            if ($data['status'] === 'completed') {
+                $update['completed_at'] = now();
+            }
+
+            $task->update($update);
+
+            // Keep parent request in sync — same rules as update()
+            $map = [
+                'in_progress' => 'in_progress',
+                'for_review'  => 'for_verification',
+                'completed'   => 'completed',
+            ];
+
+            if (isset($map[$data['status']])) {
+                $reqUpdate = ['status' => $map[$data['status']]];
+
+                if ($data['status'] === 'completed') {
+                    $remaining = TaskAssignment::where('request_id', $task->request_id)
+                        ->where('assignment_id', '!=', $task->assignment_id)
+                        ->whereIn('status', ['pending','in_progress','for_review'])
+                        ->count();
+
+                    if ($remaining > 0) {
+                        $reqUpdate['status'] = 'in_progress';
+                    } else {
+                        $reqUpdate['date_completed'] = now();
+                    }
+                }
+
+                $task->request->update($reqUpdate);
+                update_queue_positions();
+            }
+
+            notify(
+                $task->request->teacher_id,
+                "Task Update",
+                "{$task->request->request_code}: " . ucwords(str_replace('_', ' ', $data['status'])),
+                'info',
+                route('requests.show', $task->request_id)
+            );
+
+            audit('MOVE_TASK', 'task', $id, "{$old} → {$data['status']}");
+
+            DB::commit();
+
+            return response()->json([
+                'ok'      => true,
+                'task_id' => (int) $id,
+                'status'  => $data['status'],
+                'from'    => $old,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('Task move failed: ' . $e->getMessage());
+
+            return response()->json([
+                'ok'    => false,
+                'error' => 'Failed to move task. Please try again.',
+            ], 500);
+        }
+    }
+
     public function saveDiagnosis(Request $request, $id)
     {
         $task = TaskAssignment::where('assignment_id', $id)

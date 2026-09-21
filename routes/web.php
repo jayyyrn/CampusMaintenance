@@ -30,6 +30,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/tasks/{id}',       [TaskController::class, 'show'])->name('tasks.show')->middleware('role:technician,lead_technician');
     Route::post('/tasks/{id}',      [TaskController::class, 'update'])->name('tasks.update')->middleware('role:technician,lead_technician');
     Route::post('/tasks/{id}/diagnosis', [TaskController::class, 'saveDiagnosis'])->name('tasks.diagnosis')->middleware('role:technician,lead_technician');
+    Route::post('/tasks/{id}/move', [TaskController::class, 'move'])->name('tasks.move')->middleware('role:technician,lead_technician');
 
     // Inventory
     Route::get('/inventory',                 [InventoryController::class, 'index'])->name('inventory.index');
