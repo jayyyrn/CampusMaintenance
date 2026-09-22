@@ -1,6 +1,16 @@
 @extends('layouts.app')
 @section('title', 'My Tasks')
 @section('content')
+
+<script>
+    window.__taskCounts = {
+        pending:     {{ $board['pending']->count() }},
+        in_progress: {{ $board['in_progress']->count() }},
+        for_review:  {{ $board['for_review']->count() }},
+        completed:   {{ $board['completed']->count() }},
+    };
+</script>
+
 <div x-data="taskBoard()" x-init="init()">
 
     <div class="page-header">
@@ -45,8 +55,11 @@
                      x-ref="column_{{ $key }}">
 
                     @forelse($board[$key] as $t)
+                        {{-- Changed from <a> to <div> so SortableJS can drag it --}}
                         <div data-task-id="{{ $t->assignment_id }}"
                              data-status="{{ $key }}"
+                             data-task-url="{{ route('tasks.show', $t->assignment_id) }}"
+                             @click="handleCardClick($event)"
                              class="task-card block p-3 border border-slate-200 rounded-lg bg-white
                                     hover:border-brand-400 hover:shadow-sm transition cursor-grab
                                     active:cursor-grabbing select-none">
@@ -72,104 +85,9 @@
         @endforeach
     </div>
 
-    {{-- Toast for errors --}}
     <div x-show="error" x-cloak x-transition
          class="fixed bottom-4 right-4 z-50 bg-rose-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm">
         <span x-text="error"></span>
     </div>
 </div>
-
-<script type="module">
-import Sortable from 'sortablejs';
-
-window.taskBoard = function () {
-    return {
-        error: '',
-        counts: {
-            pending:     {{ $board['pending']->count() }},
-            in_progress: {{ $board['in_progress']->count() }},
-            for_review:  {{ $board['for_review']->count() }},
-            completed:   {{ $board['completed']->count() }},
-        },
-
-        init() {
-            const self = this;
-            const csrf = document.querySelector('meta[name=csrf-token]').content;
-
-            ['pending','in_progress','for_review','completed'].forEach(col => {
-                const el = this.$refs['column_' + col];
-                if (!el) return;
-
-                new Sortable(el, {
-                    group: 'tasks',
-                    animation: 150,
-                    ghostClass: 'opacity-40',
-                    dragClass: 'shadow-lg',
-                    forceFallback: false,
-                    onEnd: async (evt) => {
-                        const taskId   = evt.item.dataset.taskId;
-                        const fromCol  = evt.from.dataset.column;
-                        const toCol    = evt.to.dataset.column;
-
-                        // Same column — no-op
-                        if (fromCol === toCol) return;
-
-                        // Optimistic UI
-                        evt.item.dataset.status = toCol;
-                        self.counts[fromCol] = Math.max(0, self.counts[fromCol] - 1);
-                        self.counts[toCol]   = self.counts[toCol] + 1;
-                        self.refreshEmptyStates();
-
-                        try {
-                            const res = await fetch(`/tasks/${taskId}/move`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Accept': 'application/json',
-                                    'X-CSRF-TOKEN': csrf,
-                                    'X-Requested-With': 'XMLHttpRequest',
-                                },
-                                body: JSON.stringify({ status: toCol })
-                            });
-
-                            if (!res.ok) throw new Error('HTTP ' + res.status);
-                            const data = await res.json();
-                            if (!data.ok) throw new Error(data.error || 'Failed');
-                        } catch (e) {
-                            // Revert
-                            evt.from.insertBefore(evt.item, evt.from.children[evt.oldIndex] ?? null);
-                            evt.item.dataset.status = fromCol;
-                            self.counts[fromCol] = self.counts[fromCol] + 1;
-                            self.counts[toCol]   = Math.max(0, self.counts[toCol] - 1);
-                            self.refreshEmptyStates();
-
-                            self.error = 'Could not move task: ' + e.message;
-                            setTimeout(() => self.error = '', 3500);
-                        }
-                    }
-                });
-            });
-
-            this.refreshEmptyStates();
-        },
-
-        refreshEmptyStates() {
-            document.querySelectorAll('[data-column]').forEach(col => {
-                const key   = col.dataset.column;
-                const empty = col.querySelector('[data-empty="' + key + '"]');
-                const hasTasks = col.querySelectorAll('[data-task-id]').length > 0;
-
-                if (hasTasks && empty) empty.remove();
-                if (!hasTasks && !empty) {
-                    const p = document.createElement('p');
-                    p.className = 'text-xs text-slate-400 text-center py-8';
-                    p.dataset.empty = key;
-                    p.textContent = 'No tasks';
-                    col.appendChild(p);
-                }
-            });
-        }
-    };
-};
-</script>
 @endsection
