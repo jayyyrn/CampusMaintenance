@@ -24,7 +24,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/requests/{id}/assign', [RequestController::class, 'assign'])->name('requests.assign')->middleware('role:coordinator,lead_technician,admin');
     Route::post('/requests/{id}/status', [RequestController::class, 'updateStatus'])->name('requests.status')->middleware('role:coordinator,lead_technician,admin,technician');
     Route::post('/diagnoses/{id}/verify', [RequestController::class, 'verifyDiagnosis'])->name('diagnoses.verify')->middleware('role:lead_technician,admin');
-
+    Route::post('/requests/scan', [RequestController::class, 'scan'])
+    ->name('requests.scan')
+    ->middleware('role:teacher,coordinator,lead_technician,admin');
     // Tasks (technician board)
     Route::get('/tasks',            [TaskController::class, 'index'])->name('tasks.index')->middleware('role:technician,lead_technician');
     Route::get('/tasks/{id}',       [TaskController::class, 'show'])->name('tasks.show')->middleware('role:technician,lead_technician');
