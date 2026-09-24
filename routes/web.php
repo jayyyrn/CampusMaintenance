@@ -56,8 +56,12 @@ Route::middleware('auth')->group(function () {
 
     // Admin
     Route::middleware('role:admin')->group(function () {
-        Route::get('/admin/users',      [AdminController::class, 'users'])->name('admin.users');
-        Route::post('/admin/users',     [AdminController::class, 'storeUser'])->name('admin.users.store');
-        Route::get('/admin/audit-logs', [AdminController::class, 'auditLogs'])->name('admin.audit_logs');
+        Route::get('/admin/users',                    [AdminController::class, 'users'])->name('admin.users');
+        Route::post('/admin/users',                   [AdminController::class, 'storeUser'])->name('admin.users.store');
+        Route::post('/admin/users/{id}/update',       [AdminController::class, 'updateUser'])->name('admin.users.update');
+        Route::post('/admin/users/{id}/delete',       [AdminController::class, 'deleteUser'])->name('admin.users.delete');
+        Route::post('/admin/users/{id}/change-password', [AdminController::class, 'changePassword'])->name('admin.users.change_password');
+        Route::post('/admin/users/{id}/reset-password',  [AdminController::class, 'resetPassword'])->name('admin.users.reset_password');
+        Route::get('/admin/audit-logs',               [AdminController::class, 'auditLogs'])->name('admin.audit_logs');
     });
 });
