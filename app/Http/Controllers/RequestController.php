@@ -5,9 +5,76 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\{MaintenanceRequest, Equipment, TaskAssignment, User, Diagnosis};
+use Gemini\Laravel\Facades\Gemini;
+use Gemini\Data\GenerationConfig;
+use Gemini\Data\Schema;
+use Gemini\Enums\DataType;
+use Gemini\Enums\ResponseMimeType;
+use Gemini\Data\Blob;
+use Gemini\Enums\MimeType;
 
 class RequestController extends Controller
 {
+    public function scan(Request $request)
+{
+    $request->validate([
+        'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
+    ]);
+
+    try {
+        $image = $request->file('image');
+
+        $blob = new Blob(
+            mimeType: MimeType::from($image->getMimeType()),
+            data: base64_encode(file_get_contents($image->getPathname()))
+        );
+
+        $schema = new Schema(
+            type: DataType::OBJECT,
+            properties: [
+                'unit_no'             => new Schema(type: DataType::STRING),
+                'description'         => new Schema(type: DataType::STRING),
+                'date_start'          => new Schema(type: DataType::STRING),
+                'date_finish'         => new Schema(type: DataType::STRING),
+                'manpower'            => new Schema(type: DataType::STRING),
+                'tools_and_materials' => new Schema(type: DataType::STRING),
+                'estimated_budget'    => new Schema(type: DataType::STRING),
+                'category'            => new Schema(type: DataType::STRING),
+                'priority'            => new Schema(type: DataType::STRING),
+            ],
+            required: ['unit_no','description','category','priority']
+        );
+
+        $config = new GenerationConfig(
+            responseMimeType: ResponseMimeType::APPLICATION_JSON,
+            responseSchema: $schema
+        );
+
+        $prompt = <<<PROMPT
+Read this Philippine university Job Order / Work Request form.
+Extract every field. Return "" for blank fields.
+Transcribe handwriting as best you can.
+For "category", pick ONE of: electrical, carpentry, fabrication, aircon, plumbing, general.
+For "priority", pick ONE of: low, medium, high, urgent (default "medium" if unsure).
+PROMPT;
+
+        $result = Gemini::generativeModel('gemini-1.5-flash')
+            ->withGenerationConfig($config)
+            ->generateContent([$prompt, $blob]);
+
+        return response()->json([
+            'ok'     => true,
+            'fields' => $result->json(),
+        ]);
+
+    } catch (\Throwable $e) {
+        \Log::error('Gemini scan failed: ' . $e->getMessage());
+        return response()->json([
+            'ok'    => false,
+            'error' => 'Could not read the form. Try a clearer photo or fill it manually.',
+        ], 422);
+    }
+}
     public function index(Request $request)
     {
         $user     = $request->user();
@@ -61,60 +128,70 @@ class RequestController extends Controller
     }
 
     public function store(Request $request)
-    {
-        $data = $request->validate([
-            'title'        => 'required|string|max:200',
-            'description'  => 'required|string|min:10',
-            'category'     => 'required|in:electrical,carpentry,fabrication,aircon,plumbing,general',
-            'location'     => 'nullable|string|max:100',
-            'priority'     => 'required|in:low,medium,high,urgent',
-            'equipment_id' => 'nullable|exists:equipment,equipment_id',
-            'photo_before' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
-        ], [
-            'description.min' => 'Please describe the problem in at least 10 characters.',
-        ]);
+{
+    $data = $request->validate([
+    'title'               => 'required|string|max:200',
+    'description'         => 'required|string|min:10',
+    'category'            => 'required|in:electrical,carpentry,fabrication,aircon,plumbing,general,other',
+    'custom_category'     => 'nullable|string|max:100|required_if:category,other',
+    'location'            => 'nullable|string|max:100',
+    'photo_before'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
+    'unit_no'             => 'nullable|string|max:50',
+    'tools_and_materials' => 'nullable|string',
+    'estimated_budget'    => 'nullable|numeric|min:0',
+    'date_start'          => 'nullable|string|max:50',
+    'date_finish'         => 'nullable|string|max:50',
+], [
+    'description.min'        => 'Please describe the problem in at least 10 characters.',
+    'custom_category.required_if' => 'Please type your custom category.',
+]);
 
-        DB::beginTransaction();
-        try {
-            $photoPath = null;
-            if ($request->hasFile('photo_before')) {
-                $photoPath = $request->file('photo_before')->store('requests', 'public');
-            }
-
-            $req = MaintenanceRequest::create([
-                'request_code'  => generate_request_code(),
-                'teacher_id'    => $request->user()->user_id,
-                'equipment_id'  => $data['equipment_id'] ?? null,
-                'department_id' => $request->user()->department_id,
-                'category'      => $data['category'],
-                'title'         => $data['title'],
-                'description'   => $data['description'],
-                'location'      => $data['location'] ?? null,
-                'priority'      => $data['priority'],
-                'photo_before'  => $photoPath,
-            ]);
-
-            update_queue_positions();
-
-            foreach (User::whereIn('role', ['coordinator','lead_technician','admin'])
-                        ->where('status', 'active')->get() as $a) {
-                notify($a->user_id,
-                    "New Request: {$req->request_code}",
-                    $req->title, 'info',
-                    route('requests.show', $req->request_id));
-            }
-
-            audit('CREATE_REQUEST', 'request', $req->request_id, $req->request_code);
-
-            DB::commit();
-            return redirect()->route('requests.show', $req->request_id)
-                ->with('success', "Request {$req->request_code} submitted successfully.");
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            \Log::error('Request create failed: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
-            return back()->with('error', 'Failed to submit request. Please try again.')->withInput();
+    DB::beginTransaction();
+    try {
+        $photoPath = null;
+        if ($request->hasFile('photo_before')) {
+            $photoPath = $request->file('photo_before')->store('requests', 'public');
         }
+
+        $req = MaintenanceRequest::create([
+    'request_code'        => generate_request_code(),
+    'teacher_id'          => $request->user()->user_id,
+    'department_id'       => $request->user()->department_id,
+    'category'            => $data['category'] === 'other' ? 'general' : $data['category'],
+    'custom_category'     => $data['category'] === 'other' ? $data['custom_category'] : null,
+    'title'               => $data['title'],
+    'description'         => $data['description'],
+    'location'            => $data['location'] ?? null,
+    'priority'            => 'medium',   // ← forced default, teachers don't set it
+    'photo_before'        => $photoPath,
+    'unit_no'             => $data['unit_no'] ?? null,
+    'tools_and_materials' => $data['tools_and_materials'] ?? null,
+    'estimated_budget'    => $data['estimated_budget'] ?? null,
+    'date_start'          => $data['date_start'] ?? null,
+    'date_finish'         => $data['date_finish'] ?? null,
+]);
+
+        update_queue_positions();
+
+        foreach (User::whereIn('role', ['coordinator','lead_technician','admin'])
+                    ->where('status', 'active')->get() as $a) {
+            notify($a->user_id,
+                "New Request: {$req->request_code}",
+                $req->title, 'info',
+                route('requests.show', $req->request_id));
+        }
+
+        audit('CREATE_REQUEST', 'request', $req->request_id, $req->request_code);
+
+        DB::commit();
+        return redirect()->route('requests.show', $req->request_id)
+            ->with('success', "Request {$req->request_code} submitted successfully.");
+    } catch (\Throwable $e) {
+        DB::rollBack();
+        \Log::error('Request create failed: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+        return back()->with('error', 'Failed to submit request. Please try again.')->withInput();
     }
+}
 
     public function show(Request $request, $id)
     {

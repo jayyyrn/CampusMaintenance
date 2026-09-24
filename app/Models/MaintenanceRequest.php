@@ -8,10 +8,12 @@ class MaintenanceRequest extends Model
 {
     protected $primaryKey = 'request_id';
     protected $fillable = [
-        'request_code','teacher_id','equipment_id','department_id','category',
-        'title','description','location','priority','status','queue_position',
-        'photo_before','photo_after','date_reported','date_completed'
-    ];
+    'request_code','teacher_id','equipment_id','department_id','category',
+    'title','description','location','priority','status','queue_position',
+    'photo_before','photo_after','date_reported','date_completed',
+    'unit_no','tools_and_materials','estimated_budget','date_start','date_finish',
+    'custom_category',
+];
     protected $casts = [
         'date_reported'  => 'datetime',
         'date_completed' => 'datetime',
