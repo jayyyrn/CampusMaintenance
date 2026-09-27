@@ -54,6 +54,17 @@
             </button>
         </form>
 
+        {{-- Back to Public Queue --}}
+        <a href="{{ route('home') }}"
+           class="mt-4 w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg
+                  bg-white hover:bg-slate-50 text-slate-700 font-semibold
+                  border border-slate-200 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            Back to Public Queue
+        </a>
+
         <div class="mt-8 pt-6 border-t border-slate-200 text-center">
             <p class="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Demo Accounts</p>
             <p class="text-xs text-slate-400 leading-relaxed">

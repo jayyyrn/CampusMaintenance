@@ -154,17 +154,31 @@
                 </div>
 
                 <div class="card p-6">
-                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Update Status</h3>
-                    <form method="POST" action="{{ route('requests.status', $req->request_id) }}" class="space-y-3">
-                        @csrf
-                        <select name="status" required class="input">
-                            @foreach(['pending','review','assigned','in_progress','for_verification','completed','cancelled'] as $s)
-                                <option value="{{ $s }}" @selected($req->status === $s)>{{ ucwords(str_replace('_',' ',$s)) }}</option>
-                            @endforeach
-                        </select>
-                        <button class="btn-primary w-full">Update Status</button>
-                    </form>
-                </div>
+    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Update Request</h3>
+    <form method="POST" action="{{ route('requests.status', $req->request_id) }}" class="space-y-3">
+        @csrf
+
+        <div>
+            <label class="label" for="priority">Priority</label>
+            <select id="priority" name="priority" class="input">
+                @foreach(['low','medium','high','urgent'] as $p)
+                    <option value="{{ $p }}" @selected($req->priority === $p)>{{ ucfirst($p) }}</option>
+                @endforeach
+            </select>
+        </div>
+
+        <div>
+            <label class="label" for="status">Status</label>
+            <select id="status" name="status" required class="input">
+                @foreach(['pending','review','assigned','in_progress','for_verification','completed','cancelled'] as $s)
+                    <option value="{{ $s }}" @selected($req->status === $s)>{{ ucwords(str_replace('_',' ',$s)) }}</option>
+                @endforeach
+            </select>
+        </div>
+
+        <button class="btn-primary w-full">Save Changes</button>
+    </form>
+</div>
             @endif
 
             <div class="card p-6">

@@ -16,84 +16,77 @@ use Gemini\Enums\MimeType;
 class RequestController extends Controller
 {
     public function scan(Request $request)
-{
-    $request->validate([
-        'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
-    ]);
+    {
+        $request->validate([
+            'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
+        ]);
 
-    try {
-        $image = $request->file('image');
+        try {
+            $image = $request->file('image');
 
-        $blob = new Blob(
-            mimeType: MimeType::from($image->getMimeType()),
-            data: base64_encode(file_get_contents($image->getPathname()))
-        );
+            $blob = new Blob(
+                mimeType: MimeType::from($image->getMimeType()),
+                data: base64_encode(file_get_contents($image->getPathname()))
+            );
 
-        $schema = new Schema(
-            type: DataType::OBJECT,
-            properties: [
-                'title'               => new Schema(type: DataType::STRING),
-                'description'         => new Schema(type: DataType::STRING),
-                'category'            => new Schema(type: DataType::STRING),
-                'location'            => new Schema(type: DataType::STRING),
-                'unit_no'             => new Schema(type: DataType::STRING),
-                'tools_and_materials' => new Schema(type: DataType::STRING),
-                'estimated_budget'    => new Schema(type: DataType::STRING),
-                'date_start'          => new Schema(type: DataType::STRING),
-                'date_finish'         => new Schema(type: DataType::STRING),
-            ],
-            required: ['title', 'description', 'category']
-        );
+            $schema = new Schema(
+                type: DataType::OBJECT,
+                properties: [
+                    'title'               => new Schema(type: DataType::STRING),
+                    'description'         => new Schema(type: DataType::STRING),
+                    'category'            => new Schema(type: DataType::STRING),
+                    'location'            => new Schema(type: DataType::STRING),
+                    'unit_no'             => new Schema(type: DataType::STRING),
+                    'tools_and_materials' => new Schema(type: DataType::STRING),
+                    'estimated_budget'    => new Schema(type: DataType::STRING),
+                    'date_start'          => new Schema(type: DataType::STRING),
+                    'date_finish'         => new Schema(type: DataType::STRING),
+                ],
+                required: ['title', 'description', 'category']
+            );
 
-        $config = new GenerationConfig(
-            responseMimeType: ResponseMimeType::APPLICATION_JSON,
-            responseSchema: $schema
-        );
+            $config = new GenerationConfig(
+                responseMimeType: ResponseMimeType::APPLICATION_JSON,
+                responseSchema: $schema
+            );
 
-        $prompt = <<<PROMPT
+            $prompt = <<<PROMPT
 You are reading an image that contains a maintenance request. The image could be:
-
-1. A full Philippine university "Job Order / Work Request Form" (with Unit No., Description of request, ACTIVITY, MANPOWER, TOOLS and MATERIALS, ESTIMATED BUDGET, signatures, etc.)
-2. A simple list of handwritten or typed fields (e.g., "Unit No. / Problem description / Type of work / Department")
-3. A photo, screenshot, or scanned document — anything that describes a maintenance concern.
+1. A full Philippine university "Job Order / Work Request Form"
+2. A simple list of handwritten or typed fields
+3. A photo, screenshot, or scanned document
 
 Extract the following fields and return them as JSON. Use "" for anything you can't find.
 
-- title: A short summary of the request. If the image has a "Description of request" or "Problem description" line, use that. Otherwise write a short 3-8 word summary from whatever text is present.
-- description: A more detailed description. Use the paper's long-form description if present, otherwise combine whatever detail is visible.
+- title: Short summary. If "Description of request" or "Problem description" is present, use that.
+- description: More detail.
 - category: ONE of electrical, carpentry, fabrication, aircon, plumbing, general.
-  If the image shows "Aircon" or "Type of work: Aircon" → "aircon".
-  If it shows something not in the list → "general".
-- location: Room number, unit number, or "Department" field. If it says "Lab1" → "Lab1". If it says "Room 201" → "Room 201".
-- unit_no: The "Unit No." value if present, otherwise "".
-- tools_and_materials: Only if the form has a "TOOLS and MATERIALS" section, otherwise "".
-- estimated_budget: Only if the form has an "ESTIMATED BUDGET" field, otherwise "".
-- date_start: Only if the form has a "START" date, otherwise "".
-- date_finish: Only if the form has a "FINISH" date, otherwise "".
-
-Be generous — if the text is handwritten and slightly unclear, make your best guess.
-If the image is mostly empty or unreadable, return "" for everything.
+- location: Room number, unit number, or Department field.
+- unit_no: "Unit No." value if present, otherwise "".
+- tools_and_materials: Only if "TOOLS and MATERIALS" section exists, otherwise "".
+- estimated_budget: Only if "ESTIMATED BUDGET" field exists, otherwise "".
+- date_start: Only if "START" date exists, otherwise "".
+- date_finish: Only if "FINISH" date exists, otherwise "".
 PROMPT;
 
-        $result = Gemini::generativeModel('gemini-1.5-flash')
-            ->withGenerationConfig($config)
-            ->generateContent([$prompt, $blob]);
+            $result = Gemini::generativeModel('gemini-1.5-flash')
+                ->withGenerationConfig($config)
+                ->generateContent([$prompt, $blob]);
 
-        return response()->json([
-            'ok'     => true,
-            'fields' => $result->json(),
-        ]);
+            return response()->json([
+                'ok'     => true,
+                'fields' => $result->json(),
+            ]);
 
-    } catch (\Throwable $e) {
-        \Log::error('Gemini scan failed: ' . $e->getMessage(), [
-            'trace' => $e->getTraceAsString(),
-        ]);
-        return response()->json([
-            'ok'    => false,
-            'error' => 'Could not read the form. Try a clearer photo or fill it manually.',
-        ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('Gemini scan failed: ' . $e->getMessage());
+            return response()->json([
+                'ok'    => false,
+                'error' => 'Could not read the form. Try a clearer photo or fill it manually.',
+            ], 422);
+        }
     }
-}
+
     public function index(Request $request)
     {
         $user     = $request->user();
@@ -104,13 +97,9 @@ PROMPT;
 
         $query = MaintenanceRequest::with(['teacher','department','activeAssignment.technician']);
 
-        // Teacher: only their own
         if ($user->isTeacher()) {
             $query->where('teacher_id', $user->user_id);
-        }
-        // Regular technician only: only requests assigned to them.
-        // Lead technicians, coordinators, admins see everything.
-        elseif ($user->role === 'technician') {
+        } elseif ($user->role === 'technician') {
             $query->whereHas('assignments', fn($q) => $q->where('technician_id', $user->user_id));
         }
 
@@ -146,118 +135,114 @@ PROMPT;
         return view('requests.create', compact('equipment'));
     }
 
-    
     public function store(Request $request)
-{
-    $data = $request->validate([
-        'title'               => 'required|string|max:200',
-        'description'         => 'required|string|min:10',
-        'department_id'       => 'required',
-        'custom_department'   => 'nullable|string|max:100|required_if:department_id,other',
-        'category'            => 'required|in:electrical,carpentry,fabrication,aircon,plumbing,general,other',
-        'custom_category'     => 'nullable|string|max:100|required_if:category,other',
-        'location'            => 'nullable|string|max:100',
-        'photo_before'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
-        'unit_no'             => 'nullable|string|max:50',
-        'tools_and_materials' => 'nullable|string',
-        'estimated_budget'    => 'nullable|numeric|min:0',
-        'date_start'          => 'nullable|string|max:50',
-        'date_finish'         => 'nullable|string|max:50',
-    ], [
-        'description.min'               => 'Please describe the problem in at least 10 characters.',
-        'custom_category.required_if'   => 'Please type your custom category.',
-        'custom_department.required_if' => 'Please type the department name.',
-        'department_id.required'        => 'Please select a department.',
-    ]);
-
-    DB::beginTransaction();
-    try {
-        // ── Resolve department: numeric ID, or "other" → create/find ──
-        if ($data['department_id'] === 'other') {
-            $customName = trim($data['custom_department'] ?? '');
-
-            if ($customName === '') {
-                DB::rollBack();
-                return back()->with('error', 'Please type the department name.')->withInput();
-            }
-
-            $existing = Department::whereRaw('LOWER(dept_name) = ?', [strtolower($customName)])->first();
-
-            if ($existing) {
-                $resolvedDeptId = $existing->dept_id;
-            } else {
-                $baseCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $customName), 0, 6));
-                if ($baseCode === '') $baseCode = 'DEPT';
-
-                $code = $baseCode;
-                $suffix = 1;
-                while (Department::where('dept_code', $code)->exists()) {
-                    $code = $baseCode . $suffix;
-                    $suffix++;
-                }
-
-                $newDept = Department::create([
-                    'dept_name' => $customName,
-                    'dept_code' => $code,
-                ]);
-                $resolvedDeptId = $newDept->dept_id;
-
-                audit('CREATE_DEPARTMENT', 'department', $newDept->dept_id, $newDept->dept_name);
-            }
-        } else {
-            if (!Department::where('dept_id', $data['department_id'])->exists()) {
-                DB::rollBack();
-                return back()->with('error', 'Selected department is invalid.')->withInput();
-            }
-            $resolvedDeptId = (int) $data['department_id'];
-        }
-
-        // ── Photo ──
-        $photoPath = null;
-        if ($request->hasFile('photo_before')) {
-            $photoPath = $request->file('photo_before')->store('requests', 'public');
-        }
-
-        // ── Create request ──
-        $req = MaintenanceRequest::create([
-            'request_code'        => generate_request_code(),
-            'teacher_id'          => $request->user()->user_id,
-            'department_id'       => $resolvedDeptId,
-            'category'            => $data['category'] === 'other' ? 'general' : $data['category'],
-            'custom_category'     => $data['category'] === 'other' ? $data['custom_category'] : null,
-            'title'               => $data['title'],
-            'description'         => $data['description'],
-            'location'            => $data['location'] ?? null,
-            'priority'            => 'medium',
-            'photo_before'        => $photoPath,
-            'unit_no'             => $data['unit_no'] ?? null,
-            'tools_and_materials' => $data['tools_and_materials'] ?? null,
-            'estimated_budget'    => $data['estimated_budget'] ?? null,
-            'date_start'          => $data['date_start'] ?? null,
-            'date_finish'         => $data['date_finish'] ?? null,
+    {
+        $data = $request->validate([
+            'title'               => 'required|string|max:200',
+            'description'         => 'required|string|min:10',
+            'department_id'       => 'required',
+            'custom_department'   => 'nullable|string|max:100|required_if:department_id,other',
+            'category'            => 'required|in:electrical,carpentry,fabrication,aircon,plumbing,general,other',
+            'custom_category'     => 'nullable|string|max:100|required_if:category,other',
+            'location'            => 'nullable|string|max:100',
+            'photo_before'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'unit_no'             => 'nullable|string|max:50',
+            'tools_and_materials' => 'nullable|string',
+            'estimated_budget'    => 'nullable|numeric|min:0',
+            'date_start'          => 'nullable|string|max:50',
+            'date_finish'         => 'nullable|string|max:50',
+        ], [
+            'description.min'               => 'Please describe the problem in at least 10 characters.',
+            'custom_category.required_if'   => 'Please type your custom category.',
+            'custom_department.required_if' => 'Please type the department name.',
+            'department_id.required'        => 'Please select a department.',
         ]);
 
-        update_queue_positions();
+        DB::beginTransaction();
+        try {
+            // Resolve department
+            if ($data['department_id'] === 'other') {
+                $customName = trim($data['custom_department'] ?? '');
+                if ($customName === '') {
+                    DB::rollBack();
+                    return back()->with('error', 'Please type the department name.')->withInput();
+                }
 
-        foreach (User::whereIn('role', ['coordinator','lead_technician','admin'])
-                    ->where('status', 'active')->get() as $a) {
-            notify($a->user_id,
-                "New Request: {$req->request_code}",
-                $req->title, 'info',
-                route('requests.show', $req->request_id));
+                $existing = Department::whereRaw('LOWER(dept_name) = ?', [strtolower($customName)])->first();
+
+                if ($existing) {
+                    $resolvedDeptId = $existing->dept_id;
+                } else {
+                    $baseCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $customName), 0, 6));
+                    if ($baseCode === '') $baseCode = 'DEPT';
+
+                    $code = $baseCode;
+                    $suffix = 1;
+                    while (Department::where('dept_code', $code)->exists()) {
+                        $code = $baseCode . $suffix;
+                        $suffix++;
+                    }
+
+                    $newDept = Department::create([
+                        'dept_name' => $customName,
+                        'dept_code' => $code,
+                    ]);
+                    $resolvedDeptId = $newDept->dept_id;
+
+                    audit('CREATE_DEPARTMENT', 'department', $newDept->dept_id, $newDept->dept_name);
+                }
+            } else {
+                if (!Department::where('dept_id', $data['department_id'])->exists()) {
+                    DB::rollBack();
+                    return back()->with('error', 'Selected department is invalid.')->withInput();
+                }
+                $resolvedDeptId = (int) $data['department_id'];
+            }
+
+            $photoPath = null;
+            if ($request->hasFile('photo_before')) {
+                $photoPath = $request->file('photo_before')->store('requests', 'public');
+            }
+
+            $req = MaintenanceRequest::create([
+                'request_code'        => generate_request_code(),
+                'teacher_id'          => $request->user()->user_id,
+                'department_id'       => $resolvedDeptId,
+                'category'            => $data['category'] === 'other' ? 'general' : $data['category'],
+                'custom_category'     => $data['category'] === 'other' ? $data['custom_category'] : null,
+                'title'               => $data['title'],
+                'description'         => $data['description'],
+                'location'            => $data['location'] ?? null,
+                'priority'            => 'medium',
+                'photo_before'        => $photoPath,
+                'unit_no'             => $data['unit_no'] ?? null,
+                'tools_and_materials' => $data['tools_and_materials'] ?? null,
+                'estimated_budget'    => $data['estimated_budget'] ?? null,
+                'date_start'          => $data['date_start'] ?? null,
+                'date_finish'         => $data['date_finish'] ?? null,
+            ]);
+
+            update_queue_positions();
+
+            foreach (User::whereIn('role', ['coordinator','lead_technician','admin'])
+                        ->where('status', 'active')->get() as $a) {
+                notify($a->user_id,
+                    "New Request: {$req->request_code}",
+                    $req->title, 'info',
+                    route('requests.show', $req->request_id));
+            }
+
+            audit('CREATE_REQUEST', 'request', $req->request_id, $req->request_code);
+
+            DB::commit();
+            return redirect()->route('requests.show', $req->request_id)
+                ->with('success', "Request {$req->request_code} submitted successfully.");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('Request create failed: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return back()->with('error', 'Failed to submit request. Please try again.')->withInput();
         }
-
-        audit('CREATE_REQUEST', 'request', $req->request_id, $req->request_code);
-
-        DB::commit();
-        return redirect()->route('requests.show', $req->request_id)
-            ->with('success', "Request {$req->request_code} submitted successfully.");
-    } catch (\Throwable $e) {
-        DB::rollBack();
-        \Log::error('Request create failed: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
-        return back()->with('error', 'Failed to submit request. Please try again.')->withInput();
     }
-}
 
     public function show(Request $request, $id)
     {
@@ -270,12 +255,9 @@ PROMPT;
 
         $user = $request->user();
 
-        // Teacher: only their own
         if ($user->isTeacher() && $req->teacher_id !== $user->user_id) {
             abort(403, 'You can only view your own requests.');
         }
-        // Regular technician only: only if assigned.
-        // Lead technicians can view any request.
         if ($user->role === 'technician') {
             $isAssigned = $req->assignments->contains('technician_id', $user->user_id);
             if (!$isAssigned) {
@@ -349,14 +331,14 @@ PROMPT;
     public function updateStatus(Request $request, $id)
     {
         $request->validate([
-            'status' => 'required|in:pending,review,assigned,in_progress,for_verification,completed,cancelled',
+            'status'   => 'required|in:pending,review,assigned,in_progress,for_verification,completed,cancelled',
+            'priority' => 'nullable|in:low,medium,high,urgent',
         ]);
 
         $req    = MaintenanceRequest::findOrFail($id);
         $user   = $request->user();
         $status = $request->status;
 
-        // Regular technician only: only assigned requests
         if ($user->role === 'technician') {
             $isAssigned = $req->assignments()
                 ->where('technician_id', $user->user_id)
@@ -369,10 +351,16 @@ PROMPT;
 
         DB::beginTransaction();
         try {
-            $req->update([
+            $update = [
                 'status'         => $status,
                 'date_completed' => $status === 'completed' ? now() : $req->date_completed,
-            ]);
+            ];
+
+            if ($request->filled('priority') && $user->isSupervisor()) {
+                $update['priority'] = $request->priority;
+            }
+
+            $req->update($update);
 
             if (in_array($status, ['in_progress','for_verification','completed'])) {
                 $map = [
@@ -385,7 +373,7 @@ PROMPT;
                     ->update(['status' => $map[$status]]);
             }
 
-            if (in_array($status, ['completed','cancelled'])) {
+            if (in_array($status, ['completed','cancelled']) || isset($update['priority'])) {
                 update_queue_positions();
             }
 
@@ -396,7 +384,7 @@ PROMPT;
             audit('UPDATE_STATUS', 'request', $req->request_id, $status);
 
             DB::commit();
-            return back()->with('success', 'Status updated.');
+            return back()->with('success', 'Request updated.');
         } catch (\Throwable $e) {
             DB::rollBack();
             \Log::error('Status update failed: ' . $e->getMessage());

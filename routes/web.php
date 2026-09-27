@@ -6,7 +6,10 @@ use App\Http\Controllers\{
     NotificationController, AdminController
 };
 
-Route::get('/', fn() => redirect()->route('login'));
+// Public queue is the landing page
+Route::get('/', [QueueController::class, 'display'])->name('home');
+Route::get('/queue/display/data', [QueueController::class, 'displayData'])->name('queue.display.data');
+Route::get('/queue/display/{id}', [QueueController::class, 'displayDetail'])->name('queue.display.detail');
 
 // Auth
 Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
@@ -24,10 +27,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/requests/{id}/assign', [RequestController::class, 'assign'])->name('requests.assign')->middleware('role:coordinator,lead_technician,admin');
     Route::post('/requests/{id}/status', [RequestController::class, 'updateStatus'])->name('requests.status')->middleware('role:coordinator,lead_technician,admin,technician');
     Route::post('/diagnoses/{id}/verify', [RequestController::class, 'verifyDiagnosis'])->name('diagnoses.verify')->middleware('role:lead_technician,admin');
-    Route::post('/requests/scan', [RequestController::class, 'scan'])
-    ->name('requests.scan')
-    ->middleware('role:teacher,coordinator,lead_technician,admin');
-    // Tasks (technician board)
+    Route::post('/requests/scan', [RequestController::class, 'scan'])->name('requests.scan')->middleware('role:teacher,coordinator,lead_technician,admin');
+
+    // Tasks
     Route::get('/tasks',            [TaskController::class, 'index'])->name('tasks.index')->middleware('role:technician,lead_technician');
     Route::get('/tasks/{id}',       [TaskController::class, 'show'])->name('tasks.show')->middleware('role:technician,lead_technician');
     Route::post('/tasks/{id}',      [TaskController::class, 'update'])->name('tasks.update')->middleware('role:technician,lead_technician');
@@ -48,15 +50,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/assistant',       [AiAssistantController::class, 'index'])->name('assistant.index');
     Route::post('/assistant/ask',  [AiAssistantController::class, 'ask'])->name('assistant.ask');
 
-    // Public queue
+    // Public queue (auth view)
     Route::get('/queue', [QueueController::class, 'index'])->name('queue.index');
 
     // Notifications
     Route::get('/notifications',           [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread_count');
     Route::post('/notifications/mark-read',[NotificationController::class, 'markRead'])->name('notifications.mark_read');
     Route::post('/notifications/{id}/read',[NotificationController::class, 'markRead'])->name('notifications.read');
-    Route::get('/notifications',           [NotificationController::class, 'index'])->name('notifications.index');
-    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread_count');
 
     // Admin
     Route::middleware('role:admin')->group(function () {
@@ -67,9 +68,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/admin/users/{id}/change-password', [AdminController::class, 'changePassword'])->name('admin.users.change_password');
         Route::post('/admin/users/{id}/reset-password',  [AdminController::class, 'resetPassword'])->name('admin.users.reset_password');
         Route::get('/admin/audit-logs',               [AdminController::class, 'auditLogs'])->name('admin.audit_logs');
-        Route::get('/admin/departments', [AdminController::class, 'departments'])->name('admin.departments');
-Route::post('/admin/departments', [AdminController::class, 'storeDepartment'])->name('admin.departments.store');
-Route::post('/admin/departments/{id}/update', [AdminController::class, 'updateDepartment'])->name('admin.departments.update');
-Route::post('/admin/departments/{id}/delete', [AdminController::class, 'deleteDepartment'])->name('admin.departments.delete');
-        });
+        Route::get('/admin/departments',              [AdminController::class, 'departments'])->name('admin.departments');
+        Route::post('/admin/departments',             [AdminController::class, 'storeDepartment'])->name('admin.departments.store');
+        Route::post('/admin/departments/{id}/update', [AdminController::class, 'updateDepartment'])->name('admin.departments.update');
+        Route::post('/admin/departments/{id}/delete', [AdminController::class, 'deleteDepartment'])->name('admin.departments.delete');
+    });
 });
