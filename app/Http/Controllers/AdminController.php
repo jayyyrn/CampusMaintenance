@@ -107,7 +107,64 @@ class AdminController extends Controller
 
         return back()->with('success', 'Password reset to default successfully.');
     }
+public function departments()
+{
+    $departments = \App\Models\Department::withCount('users')
+        ->orderBy('dept_name')
+        ->get();
 
+    return view('admin.departments', compact('departments'));
+}
+
+public function storeDepartment(Request $request)
+{
+    $data = $request->validate([
+        'dept_name' => 'required|string|max:100',
+        'dept_code' => 'required|string|max:20|unique:departments,dept_code',
+    ]);
+
+    $dept = \App\Models\Department::create($data);
+
+    audit('CREATE_DEPARTMENT', 'department', $dept->dept_id, $dept->dept_name);
+
+    return back()->with('success', 'Department created successfully.');
+}
+
+public function updateDepartment(Request $request, $id)
+{
+    $dept = \App\Models\Department::findOrFail($id);
+
+    $data = $request->validate([
+        'dept_name' => 'required|string|max:100',
+        'dept_code' => 'required|string|max:20|unique:departments,dept_code,' . $dept->dept_id . ',dept_id',
+    ]);
+
+    $dept->update($data);
+
+    audit('UPDATE_DEPARTMENT', 'department', $dept->dept_id, $dept->dept_name);
+
+    return back()->with('success', 'Department updated successfully.');
+}
+
+public function deleteDepartment($id)
+{
+    $dept = \App\Models\Department::findOrFail($id);
+
+    if ($dept->users()->count() > 0) {
+        return back()->with('error', 'Cannot delete — users are still assigned to this department.');
+    }
+    if ($dept->requests()->count() > 0) {
+        return back()->with('error', 'Cannot delete — requests are still linked to this department.');
+    }
+
+    $name = $dept->dept_name;
+    $deptId = $dept->dept_id;
+    $dept->delete();
+
+    audit('DELETE_DEPARTMENT', 'department', $deptId, $name);
+
+    return back()->with('success', 'Department deleted successfully.');
+}
     public function auditLogs()
     {
         $logs = AuditLog::with('user')->latest()->paginate(50);

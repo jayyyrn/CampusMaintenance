@@ -55,6 +55,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/notifications',           [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/notifications/mark-read',[NotificationController::class, 'markRead'])->name('notifications.mark_read');
     Route::post('/notifications/{id}/read',[NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::get('/notifications',           [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread_count');
 
     // Admin
     Route::middleware('role:admin')->group(function () {
@@ -65,5 +67,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/admin/users/{id}/change-password', [AdminController::class, 'changePassword'])->name('admin.users.change_password');
         Route::post('/admin/users/{id}/reset-password',  [AdminController::class, 'resetPassword'])->name('admin.users.reset_password');
         Route::get('/admin/audit-logs',               [AdminController::class, 'auditLogs'])->name('admin.audit_logs');
-    });
+        Route::get('/admin/departments', [AdminController::class, 'departments'])->name('admin.departments');
+Route::post('/admin/departments', [AdminController::class, 'storeDepartment'])->name('admin.departments.store');
+Route::post('/admin/departments/{id}/update', [AdminController::class, 'updateDepartment'])->name('admin.departments.update');
+Route::post('/admin/departments/{id}/delete', [AdminController::class, 'deleteDepartment'])->name('admin.departments.delete');
+        });
 });

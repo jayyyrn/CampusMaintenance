@@ -36,22 +36,58 @@
           class="card p-6 space-y-5">
         @csrf
 
-        {{-- Hidden fields set by scanner or defaults --}}
+        {{-- Hidden fields set by scanner --}}
         <input type="hidden" name="unit_no"             x-model="f.unit_no">
         <input type="hidden" name="tools_and_materials" x-model="f.tools_and_materials">
         <input type="hidden" name="estimated_budget"    x-model="f.estimated_budget">
         <input type="hidden" name="date_start"          x-model="f.date_start">
         <input type="hidden" name="date_finish"         x-model="f.date_finish">
-        {{-- Priority is intentionally hidden — always 'medium' for new requests --}}
         <input type="hidden" name="priority" value="medium">
 
+        {{-- Title --}}
         <div>
             <label class="label" for="title">Title / Short Summary <span class="text-rose-500">*</span></label>
             <input id="title" type="text" name="title" x-model="f.title" value="{{ old('title') }}" required
                    class="input" placeholder="e.g., Aircon not cooling in Room 201">
         </div>
 
-        {{-- CATEGORY with Other option --}}
+        {{-- Department + Manpower --}}
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   <div>
+    <label class="label" for="department_id">Department <span class="text-rose-500">*</span></label>
+    <select id="department_id" name="department_id" x-model="f.department_id" required class="input">
+        <option value="">Select department…</option>
+        @foreach(\App\Models\Department::orderBy('dept_name')->get() as $d)
+            <option value="{{ $d->dept_id }}"
+                    @selected(old('department_id', auth()->user()->department_id) == $d->dept_id)>
+                {{ $d->dept_name }}
+            </option>
+        @endforeach
+        <option value="other" @selected(old('department_id') === 'other')>Other (specify below)</option>
+    </select>
+</div>
+
+<div x-show="f.department_id === 'other'" x-cloak>
+    <label class="label" for="custom_department">
+        Specify Department <span class="text-rose-500">*</span>
+    </label>
+    <input id="custom_department" type="text" name="custom_department" x-model="f.custom_department"
+           value="{{ old('custom_department') }}"
+           class="input" placeholder="e.g., Library, Sports Office, Registrar…">
+</div>
+    <div>
+        <label class="label">
+            Manpower
+            <span class="text-xs text-slate-400 font-normal">(assigned by lead)</span>
+        </label>
+        <input type="text"
+               value="— Not yet assigned —"
+               disabled
+               class="input bg-slate-100 text-slate-500 cursor-not-allowed">
+    </div>
+</div>
+
+        {{-- Category with Other --}}
         <div>
             <label class="label" for="category">Category <span class="text-rose-500">*</span></label>
             <select id="category" name="category" x-model="f.category" required class="input">
@@ -64,20 +100,20 @@
         </div>
 
         <div x-show="f.category === 'other'" x-cloak>
-            <label class="label" for="custom_category">
-                Specify Category <span class="text-rose-500">*</span>
-            </label>
+            <label class="label" for="custom_category">Specify Category <span class="text-rose-500">*</span></label>
             <input id="custom_category" type="text" name="custom_category" x-model="f.custom_category"
                    value="{{ old('custom_category') }}"
                    class="input" placeholder="e.g., painting, welding, glass repair…">
         </div>
 
+        {{-- Location --}}
         <div>
             <label class="label" for="location">Location</label>
             <input id="location" type="text" name="location" x-model="f.location" value="{{ old('location') }}"
                    class="input" placeholder="e.g., Room 201">
         </div>
 
+        {{-- Description --}}
         <div>
             <label class="label" for="description">Problem Description <span class="text-rose-500">*</span></label>
             <textarea id="description" name="description" x-model="f.description" rows="5" required minlength="10"
@@ -85,6 +121,7 @@
                       placeholder="Describe the problem in detail (at least 10 characters)…">{{ old('description') }}</textarea>
         </div>
 
+        {{-- Photo --}}
         <div>
             <label class="label" for="photo_before">Photo Evidence (Optional)</label>
             <input id="photo_before" type="file" name="photo_before" accept="image/*"
@@ -94,12 +131,14 @@
             <p class="text-xs text-slate-400 mt-1">JPG, PNG, or WebP. Max 4MB.</p>
         </div>
 
+        {{-- Date --}}
         <div>
             <label class="label">Date Reported</label>
             <input type="text" value="{{ now()->format('M d, Y h:i A') }}" disabled
                    class="input bg-slate-100 text-slate-500 cursor-not-allowed">
         </div>
 
+        {{-- Submit --}}
         <div class="flex flex-col sm:flex-row gap-3 pt-2">
             <button type="submit" class="btn-primary flex-1 py-3">Submit Request</button>
             <a href="{{ route('requests.index') }}" class="btn-secondary sm:w-auto">Cancel</a>
@@ -200,18 +239,26 @@ function requestForm() {
 
         async runScan() {
             if (!this.scanFile) return;
-            this.scanLoading = true; this.scanError = ''; this.scanResult = null;
+            this.scanLoading = true;
+            this.scanError = '';
+            this.scanResult = null;
+
             const fd = new FormData();
             fd.append('image', this.scanFile);
             fd.append('_token', document.querySelector('meta[name=csrf-token]').content);
+
             try {
                 const res = await fetch('{{ route('requests.scan') }}', {
-                    method: 'POST', body: fd, headers: { 'Accept': 'application/json' },
+                    method: 'POST',
+                    body: fd,
+                    headers: { 'Accept': 'application/json' },
                 });
                 const data = await res.json();
                 if (!res.ok || !data.ok) throw new Error(data.error || 'Scan failed');
                 this.scanResult = data.fields;
-            } catch (err) { this.scanError = err.message; }
+            } catch (err) {
+                this.scanError = err.message;
+            }
             this.scanLoading = false;
         },
 
@@ -219,11 +266,13 @@ function requestForm() {
             if (!this.scanResult) return;
             const r = this.scanResult;
 
+            // Title from paper's "Description of request"
             if (r.description) this.f.title = r.description;
-            if (r.unit_no)     this.f.location = 'Unit ' + r.unit_no;
 
-            // Category: if the AI's guess matches an enum, use it.
-            // Otherwise set it to 'other' and put the raw text in custom_category.
+            // Location from "Unit No."
+            if (r.unit_no) this.f.location = 'Unit ' + r.unit_no;
+
+            // Category — match to enum or fall back to Other
             const validCats = ['electrical','carpentry','fabrication','aircon','plumbing','general'];
             const cat = (r.category || '').toLowerCase().trim();
             if (validCats.includes(cat)) {
@@ -236,8 +285,7 @@ function requestForm() {
                 this.f.category = 'general';
             }
 
-            // Priority is no longer set by teacher — hidden, always 'medium'
-            // Supervisor-only fields — stored in hidden inputs, will appear on show page
+            // Hidden supervisor-only fields
             if (r.unit_no)             this.f.unit_no = r.unit_no;
             if (r.tools_and_materials) this.f.tools_and_materials = r.tools_and_materials;
             if (r.estimated_budget)    this.f.estimated_budget = r.estimated_budget;

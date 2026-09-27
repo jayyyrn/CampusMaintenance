@@ -3,13 +3,18 @@ use App\Models\{Notification, AuditLog, MaintenanceRequest};
 
 if (!function_exists('notify')) {
     function notify($userId, $title, $message, $type = 'info', $link = null) {
-        return Notification::create([
+        $n = Notification::create([
             'user_id' => $userId,
             'title'   => $title,
             'message' => $message,
             'type'    => $type,
             'link'    => $link,
         ]);
+
+        // Bust the cached unread count so the badge updates on next page load
+        cache()->forget("notif_unread_{$userId}");
+
+        return $n;
     }
 }
 
@@ -37,7 +42,12 @@ if (!function_exists('generate_request_code')) {
 if (!function_exists('update_queue_positions')) {
     function update_queue_positions() {
         $requests = MaintenanceRequest::whereNotIn('status', ['completed','cancelled'])
-            ->orderByRaw("FIELD(priority, 'urgent','high','medium','low')")
+            ->orderByRaw("CASE priority
+                            WHEN 'urgent' THEN 1
+                            WHEN 'high'   THEN 2
+                            WHEN 'medium' THEN 3
+                            WHEN 'low'    THEN 4
+                            ELSE 5 END")
             ->orderBy('date_reported', 'asc')
             ->get();
         foreach ($requests as $i => $r) {

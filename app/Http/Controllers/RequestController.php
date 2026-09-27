@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Models\{MaintenanceRequest, Equipment, TaskAssignment, User, Diagnosis};
+use App\Models\{MaintenanceRequest, Equipment, TaskAssignment, User, Diagnosis, Department};
 use Gemini\Laravel\Facades\Gemini;
 use Gemini\Data\GenerationConfig;
 use Gemini\Data\Schema;
@@ -32,17 +32,17 @@ class RequestController extends Controller
         $schema = new Schema(
             type: DataType::OBJECT,
             properties: [
-                'unit_no'             => new Schema(type: DataType::STRING),
+                'title'               => new Schema(type: DataType::STRING),
                 'description'         => new Schema(type: DataType::STRING),
-                'date_start'          => new Schema(type: DataType::STRING),
-                'date_finish'         => new Schema(type: DataType::STRING),
-                'manpower'            => new Schema(type: DataType::STRING),
+                'category'            => new Schema(type: DataType::STRING),
+                'location'            => new Schema(type: DataType::STRING),
+                'unit_no'             => new Schema(type: DataType::STRING),
                 'tools_and_materials' => new Schema(type: DataType::STRING),
                 'estimated_budget'    => new Schema(type: DataType::STRING),
-                'category'            => new Schema(type: DataType::STRING),
-                'priority'            => new Schema(type: DataType::STRING),
+                'date_start'          => new Schema(type: DataType::STRING),
+                'date_finish'         => new Schema(type: DataType::STRING),
             ],
-            required: ['unit_no','description','category','priority']
+            required: ['title', 'description', 'category']
         );
 
         $config = new GenerationConfig(
@@ -51,11 +51,28 @@ class RequestController extends Controller
         );
 
         $prompt = <<<PROMPT
-Read this Philippine university Job Order / Work Request form.
-Extract every field. Return "" for blank fields.
-Transcribe handwriting as best you can.
-For "category", pick ONE of: electrical, carpentry, fabrication, aircon, plumbing, general.
-For "priority", pick ONE of: low, medium, high, urgent (default "medium" if unsure).
+You are reading an image that contains a maintenance request. The image could be:
+
+1. A full Philippine university "Job Order / Work Request Form" (with Unit No., Description of request, ACTIVITY, MANPOWER, TOOLS and MATERIALS, ESTIMATED BUDGET, signatures, etc.)
+2. A simple list of handwritten or typed fields (e.g., "Unit No. / Problem description / Type of work / Department")
+3. A photo, screenshot, or scanned document — anything that describes a maintenance concern.
+
+Extract the following fields and return them as JSON. Use "" for anything you can't find.
+
+- title: A short summary of the request. If the image has a "Description of request" or "Problem description" line, use that. Otherwise write a short 3-8 word summary from whatever text is present.
+- description: A more detailed description. Use the paper's long-form description if present, otherwise combine whatever detail is visible.
+- category: ONE of electrical, carpentry, fabrication, aircon, plumbing, general.
+  If the image shows "Aircon" or "Type of work: Aircon" → "aircon".
+  If it shows something not in the list → "general".
+- location: Room number, unit number, or "Department" field. If it says "Lab1" → "Lab1". If it says "Room 201" → "Room 201".
+- unit_no: The "Unit No." value if present, otherwise "".
+- tools_and_materials: Only if the form has a "TOOLS and MATERIALS" section, otherwise "".
+- estimated_budget: Only if the form has an "ESTIMATED BUDGET" field, otherwise "".
+- date_start: Only if the form has a "START" date, otherwise "".
+- date_finish: Only if the form has a "FINISH" date, otherwise "".
+
+Be generous — if the text is handwritten and slightly unclear, make your best guess.
+If the image is mostly empty or unreadable, return "" for everything.
 PROMPT;
 
         $result = Gemini::generativeModel('gemini-1.5-flash')
@@ -68,7 +85,9 @@ PROMPT;
         ]);
 
     } catch (\Throwable $e) {
-        \Log::error('Gemini scan failed: ' . $e->getMessage());
+        \Log::error('Gemini scan failed: ' . $e->getMessage(), [
+            'trace' => $e->getTraceAsString(),
+        ]);
         return response()->json([
             'ok'    => false,
             'error' => 'Could not read the form. Try a clearer photo or fill it manually.',
@@ -127,49 +146,96 @@ PROMPT;
         return view('requests.create', compact('equipment'));
     }
 
+    
     public function store(Request $request)
 {
     $data = $request->validate([
-    'title'               => 'required|string|max:200',
-    'description'         => 'required|string|min:10',
-    'category'            => 'required|in:electrical,carpentry,fabrication,aircon,plumbing,general,other',
-    'custom_category'     => 'nullable|string|max:100|required_if:category,other',
-    'location'            => 'nullable|string|max:100',
-    'photo_before'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
-    'unit_no'             => 'nullable|string|max:50',
-    'tools_and_materials' => 'nullable|string',
-    'estimated_budget'    => 'nullable|numeric|min:0',
-    'date_start'          => 'nullable|string|max:50',
-    'date_finish'         => 'nullable|string|max:50',
-], [
-    'description.min'        => 'Please describe the problem in at least 10 characters.',
-    'custom_category.required_if' => 'Please type your custom category.',
-]);
+        'title'               => 'required|string|max:200',
+        'description'         => 'required|string|min:10',
+        'department_id'       => 'required',
+        'custom_department'   => 'nullable|string|max:100|required_if:department_id,other',
+        'category'            => 'required|in:electrical,carpentry,fabrication,aircon,plumbing,general,other',
+        'custom_category'     => 'nullable|string|max:100|required_if:category,other',
+        'location'            => 'nullable|string|max:100',
+        'photo_before'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
+        'unit_no'             => 'nullable|string|max:50',
+        'tools_and_materials' => 'nullable|string',
+        'estimated_budget'    => 'nullable|numeric|min:0',
+        'date_start'          => 'nullable|string|max:50',
+        'date_finish'         => 'nullable|string|max:50',
+    ], [
+        'description.min'               => 'Please describe the problem in at least 10 characters.',
+        'custom_category.required_if'   => 'Please type your custom category.',
+        'custom_department.required_if' => 'Please type the department name.',
+        'department_id.required'        => 'Please select a department.',
+    ]);
 
     DB::beginTransaction();
     try {
+        // ── Resolve department: numeric ID, or "other" → create/find ──
+        if ($data['department_id'] === 'other') {
+            $customName = trim($data['custom_department'] ?? '');
+
+            if ($customName === '') {
+                DB::rollBack();
+                return back()->with('error', 'Please type the department name.')->withInput();
+            }
+
+            $existing = Department::whereRaw('LOWER(dept_name) = ?', [strtolower($customName)])->first();
+
+            if ($existing) {
+                $resolvedDeptId = $existing->dept_id;
+            } else {
+                $baseCode = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $customName), 0, 6));
+                if ($baseCode === '') $baseCode = 'DEPT';
+
+                $code = $baseCode;
+                $suffix = 1;
+                while (Department::where('dept_code', $code)->exists()) {
+                    $code = $baseCode . $suffix;
+                    $suffix++;
+                }
+
+                $newDept = Department::create([
+                    'dept_name' => $customName,
+                    'dept_code' => $code,
+                ]);
+                $resolvedDeptId = $newDept->dept_id;
+
+                audit('CREATE_DEPARTMENT', 'department', $newDept->dept_id, $newDept->dept_name);
+            }
+        } else {
+            if (!Department::where('dept_id', $data['department_id'])->exists()) {
+                DB::rollBack();
+                return back()->with('error', 'Selected department is invalid.')->withInput();
+            }
+            $resolvedDeptId = (int) $data['department_id'];
+        }
+
+        // ── Photo ──
         $photoPath = null;
         if ($request->hasFile('photo_before')) {
             $photoPath = $request->file('photo_before')->store('requests', 'public');
         }
 
+        // ── Create request ──
         $req = MaintenanceRequest::create([
-    'request_code'        => generate_request_code(),
-    'teacher_id'          => $request->user()->user_id,
-    'department_id'       => $request->user()->department_id,
-    'category'            => $data['category'] === 'other' ? 'general' : $data['category'],
-    'custom_category'     => $data['category'] === 'other' ? $data['custom_category'] : null,
-    'title'               => $data['title'],
-    'description'         => $data['description'],
-    'location'            => $data['location'] ?? null,
-    'priority'            => 'medium',   // ← forced default, teachers don't set it
-    'photo_before'        => $photoPath,
-    'unit_no'             => $data['unit_no'] ?? null,
-    'tools_and_materials' => $data['tools_and_materials'] ?? null,
-    'estimated_budget'    => $data['estimated_budget'] ?? null,
-    'date_start'          => $data['date_start'] ?? null,
-    'date_finish'         => $data['date_finish'] ?? null,
-]);
+            'request_code'        => generate_request_code(),
+            'teacher_id'          => $request->user()->user_id,
+            'department_id'       => $resolvedDeptId,
+            'category'            => $data['category'] === 'other' ? 'general' : $data['category'],
+            'custom_category'     => $data['category'] === 'other' ? $data['custom_category'] : null,
+            'title'               => $data['title'],
+            'description'         => $data['description'],
+            'location'            => $data['location'] ?? null,
+            'priority'            => 'medium',
+            'photo_before'        => $photoPath,
+            'unit_no'             => $data['unit_no'] ?? null,
+            'tools_and_materials' => $data['tools_and_materials'] ?? null,
+            'estimated_budget'    => $data['estimated_budget'] ?? null,
+            'date_start'          => $data['date_start'] ?? null,
+            'date_finish'         => $data['date_finish'] ?? null,
+        ]);
 
         update_queue_positions();
 

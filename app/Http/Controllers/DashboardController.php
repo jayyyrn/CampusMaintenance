@@ -28,11 +28,16 @@ class DashboardController extends Controller
                 'for_review'  => TaskAssignment::where('technician_id', $user->user_id)->where('status','for_review')->count(),
                 'completed'   => TaskAssignment::where('technician_id', $user->user_id)->where('status','completed')->count(),
             ];
+
             $data['tasks'] = TaskAssignment::with('request')
-                ->where('technician_id', $user->user_id)
-                ->whereIn('status', ['pending','in_progress','for_review'])
-                ->orderByRaw("FIELD(request_id, (SELECT request_id FROM maintenance_requests WHERE maintenance_requests.request_id = task_assignments.request_id ORDER BY FIELD(priority,'urgent','high','medium','low')))")
-                ->limit(10)->get();
+                ->where('task_assignments.technician_id', $user->user_id)
+                ->whereIn('task_assignments.status', ['pending','in_progress','for_review'])
+                ->join('maintenance_requests', 'maintenance_requests.request_id', '=', 'task_assignments.request_id')
+                ->orderByRaw("FIELD(maintenance_requests.priority,'urgent','high','medium','low')")
+                ->orderByDesc('task_assignments.assigned_at')
+                ->select('task_assignments.*')
+                ->limit(10)
+                ->get();
 
         } elseif ($user->isInventoryOfficer()) {
             $data['stats'] = [
