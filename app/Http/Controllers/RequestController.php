@@ -268,6 +268,11 @@ PROMPT;
         return view('requests.show', compact('req'));
     }
 
+    /* ═══════════════════════════════════════════════════════════════
+       ASSIGN / REASSIGN
+       Enforces ONE active primary technician per request.
+       Previous active assignments are marked 'reassigned' and notified.
+    ═══════════════════════════════════════════════════════════════ */
     public function assign(Request $request, $id)
     {
         $request->validate(['technician_id' => 'required|exists:users,user_id']);
@@ -287,17 +292,38 @@ PROMPT;
 
         DB::beginTransaction();
         try {
-            $exists = TaskAssignment::where('request_id', $req->request_id)
+            // 1) Block if this exact technician is already active on this request
+            $alreadyActive = TaskAssignment::where('request_id', $req->request_id)
                 ->where('technician_id', $tech->user_id)
                 ->whereIn('status', ['pending','in_progress','for_review'])
                 ->lockForUpdate()
                 ->exists();
 
-            if ($exists) {
+            if ($alreadyActive) {
                 DB::rollBack();
-                return back()->with('error', "{$tech->full_name} is already assigned to this request.");
+                return back()->with('error', "{$tech->full_name} is already the active technician for this request.");
             }
 
+            // 2) Mark any OTHER active assignment(s) as reassigned
+            $previousAssignments = TaskAssignment::where('request_id', $req->request_id)
+                ->whereIn('status', ['pending','in_progress','for_review'])
+                ->lockForUpdate()
+                ->get();
+
+            $previousTechIds = [];
+
+            foreach ($previousAssignments as $prev) {
+                $prev->update([
+                    'status'   => 'reassigned',
+                    'ended_at' => now(),
+                ]);
+
+                if ($prev->technician_id !== $tech->user_id) {
+                    $previousTechIds[] = $prev->technician_id;
+                }
+            }
+
+            // 3) Create the new primary assignment
             TaskAssignment::create([
                 'request_id'    => $req->request_id,
                 'technician_id' => $tech->user_id,
@@ -305,22 +331,44 @@ PROMPT;
                 'status'        => 'pending',
             ]);
 
+            // 4) Sync request status
             if (in_array($req->status, ['pending','review'])) {
                 $req->update(['status' => 'assigned']);
             }
 
+            // 5) Notify new technician
             notify($tech->user_id, "New Task Assigned",
                 "You were assigned to {$req->request_code}.",
                 'info', route('tasks.index'));
 
+            // 6) Notify teacher
             notify($req->teacher_id, "Technician Assigned",
                 "{$tech->full_name} was assigned to {$req->request_code}.",
                 'success', route('requests.show', $req->request_id));
 
-            audit('ASSIGN_TASK', 'request', $req->request_id, "To: {$tech->full_name}");
+            // 7) Notify previous technicians (deduped)
+            foreach (array_unique($previousTechIds) as $prevTechId) {
+                notify($prevTechId, "Request Reassigned",
+                    "{$req->request_code} has been reassigned to another technician.",
+                    'warning', route('requests.show', $req->request_id));
+            }
+
+            // 8) Audit with reassignment context
+            $reassignedCount = $previousAssignments->count();
+            $details = $reassignedCount > 0
+                ? "Reassigned from {$reassignedCount} previous tech(s) to: {$tech->full_name}"
+                : "To: {$tech->full_name}";
+
+            audit('ASSIGN_TASK', 'request', $req->request_id, $details);
 
             DB::commit();
-            return back()->with('success', "Assigned to {$tech->full_name}.");
+
+            $message = $reassignedCount > 0
+                ? "Reassigned to {$tech->full_name}. Previous technician(s) notified."
+                : "Assigned to {$tech->full_name}.";
+
+            return back()->with('success', $message);
+
         } catch (\Throwable $e) {
             DB::rollBack();
             \Log::error('Assign failed: ' . $e->getMessage());

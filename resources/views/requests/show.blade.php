@@ -74,25 +74,71 @@
                 @endif
             </div>
 
-            <!-- Assignments -->
+            {{-- ═══════════════════════════════════════════════════════════
+                 PRIMARY TECHNICIAN + ASSIGNMENT HISTORY
+                 Active assignment is highlighted.
+                 Reassigned/completed assignments appear in history.
+            ═══════════════════════════════════════════════════════════ --}}
+            @php
+                $activeAssignment = $req->assignments
+                    ->firstWhere('status', 'pending')
+                    ?? $req->assignments->firstWhere('status', 'in_progress')
+                    ?? $req->assignments->firstWhere('status', 'for_review');
+
+                $previousAssignments = $req->assignments
+                    ->whereIn('status', ['reassigned', 'completed'])
+                    ->sortByDesc('assigned_at');
+            @endphp
+
+            <!-- Primary Technician -->
             <div class="card p-6">
-                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">Task Assignments</h2>
-                @forelse($req->assignments as $a)
-                    <div class="border border-slate-200 rounded-lg p-4 mb-3 last:mb-0 bg-slate-50/50">
+                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">Primary Technician</h2>
+                @if($activeAssignment)
+                    <div class="border border-brand-200 bg-brand-50/50 rounded-lg p-4">
                         <div class="flex items-center justify-between">
                             <div>
-                                <div class="font-semibold text-slate-900">{{ $a->technician->full_name ?? '—' }}</div>
-                                <div class="text-xs text-slate-500 mt-0.5">
-                                    Assigned by {{ $a->assigner->full_name ?? '—' }} • {{ $a->assigned_at->format('M d, Y') }}
+                                <div class="font-bold text-slate-900 text-base">
+                                    {{ $activeAssignment->technician->full_name ?? '—' }}
+                                </div>
+                                <div class="text-xs text-slate-500 mt-1">
+                                    Assigned by {{ $activeAssignment->assigner->full_name ?? '—' }}
+                                    • {{ $activeAssignment->assigned_at->format('M d, Y h:i A') }}
                                 </div>
                             </div>
-                            <span class="badge {{ $a->statusColor() }}">{{ ucwords(str_replace('_',' ',$a->status)) }}</span>
+                            <span class="badge {{ $activeAssignment->statusColor() }}">
+                                {{ $activeAssignment->statusLabel() }}
+                            </span>
                         </div>
                     </div>
-                @empty
-                    <p class="text-slate-400 text-sm">No technician assigned yet.</p>
-                @endforelse
+                @else
+                    <p class="text-slate-400 text-sm">No active technician assigned yet.</p>
+                @endif
             </div>
+
+            <!-- Assignment History -->
+            @if($previousAssignments->count() > 0)
+                <div class="card p-6">
+                    <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">Assignment History</h2>
+                    @foreach($previousAssignments as $a)
+                        <div class="border border-slate-200 rounded-lg p-4 mb-3 last:mb-0">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="font-semibold text-slate-700">
+                                        {{ $a->technician->full_name ?? '—' }}
+                                    </div>
+                                    <div class="text-xs text-slate-500 mt-0.5">
+                                        Assigned {{ $a->assigned_at->format('M d, Y') }}
+                                        @if($a->ended_at)
+                                            • Ended {{ $a->ended_at->format('M d, Y') }}
+                                        @endif
+                                    </div>
+                                </div>
+                                <span class="badge {{ $a->statusColor() }}">{{ $a->statusLabel() }}</span>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
 
             <!-- Diagnoses -->
             <div class="card p-6">
@@ -140,7 +186,9 @@
         <div class="space-y-6">
             @if($u->isSupervisor() && !in_array($req->status, ['completed','cancelled']))
                 <div class="card p-6">
-                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Assign Technician</h3>
+                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">
+                        {{ $activeAssignment ? 'Reassign Technician' : 'Assign Technician' }}
+                    </h3>
                     <form method="POST" action="{{ route('requests.assign', $req->request_id) }}" class="space-y-3">
                         @csrf
                         <select name="technician_id" required class="input">
@@ -149,36 +197,43 @@
                                 <option value="{{ $t->user_id }}">{{ $t->full_name }}</option>
                             @endforeach
                         </select>
-                        <button class="btn-primary w-full">Assign</button>
+                        <button class="btn-primary w-full">
+                            {{ $activeAssignment ? 'Reassign' : 'Assign' }}
+                        </button>
                     </form>
+                    @if($activeAssignment)
+                        <p class="text-xs text-slate-400 mt-2">
+                            Reassigning will notify the current technician and mark their assignment as reassigned.
+                        </p>
+                    @endif
                 </div>
 
                 <div class="card p-6">
-    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Update Request</h3>
-    <form method="POST" action="{{ route('requests.status', $req->request_id) }}" class="space-y-3">
-        @csrf
+                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Update Request</h3>
+                    <form method="POST" action="{{ route('requests.status', $req->request_id) }}" class="space-y-3">
+                        @csrf
 
-        <div>
-            <label class="label" for="priority">Priority</label>
-            <select id="priority" name="priority" class="input">
-                @foreach(['low','medium','high','urgent'] as $p)
-                    <option value="{{ $p }}" @selected($req->priority === $p)>{{ ucfirst($p) }}</option>
-                @endforeach
-            </select>
-        </div>
+                        <div>
+                            <label class="label" for="priority">Priority</label>
+                            <select id="priority" name="priority" class="input">
+                                @foreach(['low','medium','high','urgent'] as $p)
+                                    <option value="{{ $p }}" @selected($req->priority === $p)>{{ ucfirst($p) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
 
-        <div>
-            <label class="label" for="status">Status</label>
-            <select id="status" name="status" required class="input">
-                @foreach(['pending','review','assigned','in_progress','for_verification','completed','cancelled'] as $s)
-                    <option value="{{ $s }}" @selected($req->status === $s)>{{ ucwords(str_replace('_',' ',$s)) }}</option>
-                @endforeach
-            </select>
-        </div>
+                        <div>
+                            <label class="label" for="status">Status</label>
+                            <select id="status" name="status" required class="input">
+                                @foreach(['pending','review','assigned','in_progress','for_verification','completed','cancelled'] as $s)
+                                    <option value="{{ $s }}" @selected($req->status === $s)>{{ ucwords(str_replace('_',' ',$s)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
 
-        <button class="btn-primary w-full">Save Changes</button>
-    </form>
-</div>
+                        <button class="btn-primary w-full">Save Changes</button>
+                    </form>
+                </div>
             @endif
 
             <div class="card p-6">
