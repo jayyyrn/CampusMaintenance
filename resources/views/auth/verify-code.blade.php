@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CampusFix — Forgot Password</title>
+    <title>CampusFix — Verify Code</title>
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800" rel="stylesheet" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -16,14 +16,21 @@
             <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center mb-4 shadow-lg shadow-brand-500/30">
                 <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                          d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
             </div>
-            <h1 class="text-2xl font-bold text-slate-900">Forgot your password?</h1>
+            <h1 class="text-2xl font-bold text-slate-900">Check your email</h1>
             <p class="text-slate-500 text-sm mt-2">
-                Enter your email and we'll send you a 6-digit verification code.
+                We sent a 6-digit code to<br>
+                <span class="font-semibold text-slate-700">{{ $email }}</span>
             </p>
         </div>
+
+        @if (session('status'))
+            <div class="mb-5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm p-3 rounded-lg">
+                {{ session('status') }}
+            </div>
+        @endif
 
         @if (session('error'))
             <div class="mb-5 bg-rose-50 border border-rose-200 text-rose-700 text-sm p-3 rounded-lg">
@@ -37,27 +44,41 @@
             </div>
         @endif
 
-        <form method="POST" action="{{ route('password.email') }}" class="space-y-4">
+        <form method="POST" action="{{ route('password.verify') }}" class="space-y-4">
             @csrf
 
             <div>
-                <label class="label" for="email">Email Address</label>
-                <input id="email" type="email" name="email" value="{{ old('email') }}"
-                       required autofocus autocomplete="email"
-                       class="input" placeholder="you@example.com">
+                <label class="label" for="code">Verification Code</label>
+                <input id="code" type="text" name="code"
+                       inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                       value="{{ old('code') }}"
+                       required autofocus autocomplete="one-time-code"
+                       class="input text-center text-2xl font-mono tracking-widest"
+                       placeholder="000000"
+                       oninput="this.value = this.value.replace(/\D/g, '');">
+                <p class="text-xs text-slate-400 mt-2 text-center">Code expires in 15 minutes.</p>
             </div>
 
             <button type="submit" class="btn-primary w-full py-3 text-base">
-                Send Verification Code
+                Verify Code
             </button>
         </form>
 
-        <div class="mt-6 text-center">
-            <a href="{{ route('login') }}" class="text-sm text-slate-500 hover:text-slate-800 inline-flex items-center gap-1">
+        <div class="mt-6 pt-5 border-t border-slate-200">
+            <form method="POST" action="{{ route('password.resend') }}" class="text-center">
+                @csrf
+                <button type="submit" class="text-sm text-brand-600 hover:text-brand-700 font-medium">
+                    Didn't get the code? Resend
+                </button>
+            </form>
+        </div>
+
+        <div class="mt-4 text-center">
+            <a href="{{ route('password.request') }}" class="text-sm text-slate-500 hover:text-slate-800 inline-flex items-center gap-1">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                 </svg>
-                Back to Login
+                Use a different email
             </a>
         </div>
     </div>

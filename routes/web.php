@@ -5,6 +5,7 @@ use App\Http\Controllers\{
     InventoryController, AiAssistantController, QueueController,
     NotificationController, AdminController
 };
+use App\Http\Controllers\Auth\PasswordResetController;
 
 // Public queue is the landing page
 Route::get('/', [QueueController::class, 'display'])->name('home');
@@ -15,6 +16,34 @@ Route::get('/queue/display/{id}', [QueueController::class, 'displayDetail'])->na
 Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.post');
 Route::post('/logout',[AuthController::class, 'logout'])->name('logout');
+
+// ── Password Reset (OTP flow) ──
+Route::middleware('guest')->group(function () {
+    // Step 1 — email
+    Route::get('/forgot-password', [PasswordResetController::class, 'showEmailForm'])
+        ->name('password.request');
+    Route::post('/forgot-password', [PasswordResetController::class, 'sendCode'])
+        ->middleware('throttle:6,1')
+        ->name('password.email');
+
+    // Step 2 — code
+    Route::get('/verify-code', [PasswordResetController::class, 'showCodeForm'])
+        ->name('password.verify.form');
+    Route::post('/verify-code', [PasswordResetController::class, 'verifyCode'])
+        ->middleware('throttle:10,1')
+        ->name('password.verify');
+
+    // Resend
+    Route::post('/resend-code', [PasswordResetController::class, 'resendCode'])
+        ->middleware('throttle:3,1')
+        ->name('password.resend');
+
+    // Step 3 — new password
+    Route::get('/reset-password', [PasswordResetController::class, 'showResetForm'])
+        ->name('password.reset.form');
+    Route::post('/reset-password', [PasswordResetController::class, 'resetPassword'])
+        ->name('password.update');
+});
 
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');

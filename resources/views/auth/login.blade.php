@@ -37,11 +37,19 @@
                        required autofocus autocomplete="username"
                        class="input" placeholder="Enter your username">
             </div>
-            <div>
+                        <div>
                 <label class="label" for="password">Password</label>
                 <input id="password" type="password" name="password" required
                        autocomplete="current-password"
                        class="input" placeholder="Enter your password">
+            </div>
+
+            {{-- ✅ NEW: Forgot Password link --}}
+            <div class="flex justify-end -mt-1">
+                <a href="{{ route('password.request') }}"
+                   class="text-sm text-brand-600 hover:text-brand-700 font-medium">
+                    Forgot your password?
+                </a>
             </div>
 
             <label class="flex items-center gap-2 text-sm text-slate-600 select-none">
