@@ -69,7 +69,7 @@ Extract the following fields and return them as JSON. Use "" for anything you ca
 - date_finish: Only if "FINISH" date exists, otherwise "".
 PROMPT;
 
-            $result = Gemini::generativeModel('gemini-1.5-flash')
+           $result = Gemini::generativeModel('gemini-3.8-flash')
                 ->withGenerationConfig($config)
                 ->generateContent([$prompt, $blob]);
 
@@ -78,14 +78,14 @@ PROMPT;
                 'fields' => $result->json(),
             ]);
 
-        } catch (\Throwable $e) {
-            \Log::error('Gemini scan failed: ' . $e->getMessage());
-            return response()->json([
-                'ok'    => false,
-                'error' => 'Could not read the form. Try a clearer photo or fill it manually.',
-            ], 422);
-        }
-    }
+       } catch (\Throwable $e) {
+    \Log::error('Gemini scan failed: ' . $e->getMessage());
+    return response()->json([
+        'ok'    => false,
+        'error' => 'Gemini error: ' . $e->getMessage(),
+    ], 422);
+}
+}
 
     public function index(Request $request)
     {

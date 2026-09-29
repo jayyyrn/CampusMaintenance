@@ -44,50 +44,45 @@
         <input type="hidden" name="date_finish"         x-model="f.date_finish">
         <input type="hidden" name="priority" value="medium">
 
-        {{-- Title --}}
         <div>
             <label class="label" for="title">Title / Short Summary <span class="text-rose-500">*</span></label>
             <input id="title" type="text" name="title" x-model="f.title" value="{{ old('title') }}" required
                    class="input" placeholder="e.g., Aircon not cooling in Room 201">
         </div>
 
-        {{-- Department + Manpower --}}
-<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-   <div>
-    <label class="label" for="department_id">Department <span class="text-rose-500">*</span></label>
-    <select id="department_id" name="department_id" x-model="f.department_id" required class="input">
-        <option value="">Select department…</option>
-        @foreach(\App\Models\Department::orderBy('dept_name')->get() as $d)
-            <option value="{{ $d->dept_id }}"
-                    @selected(old('department_id', auth()->user()->department_id) == $d->dept_id)>
-                {{ $d->dept_name }}
-            </option>
-        @endforeach
-        <option value="other" @selected(old('department_id') === 'other')>Other (specify below)</option>
-    </select>
-</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="label" for="department_id">Department <span class="text-rose-500">*</span></label>
+                <select id="department_id" name="department_id" x-model="f.department_id" required class="input">
+                    <option value="">Select department…</option>
+                    @foreach(\App\Models\Department::orderBy('dept_name')->get() as $d)
+                        <option value="{{ $d->dept_id }}"
+                                @selected(old('department_id', auth()->user()->department_id) == $d->dept_id)>
+                            {{ $d->dept_name }}
+                        </option>
+                    @endforeach
+                    <option value="other" @selected(old('department_id') === 'other')>Other (specify below)</option>
+                </select>
+            </div>
+            <div>
+                <label class="label">
+                    Manpower
+                    <span class="text-xs text-slate-400 font-normal">(assigned by lead)</span>
+                </label>
+                <input type="text" value="— Not yet assigned —" disabled
+                       class="input bg-slate-100 text-slate-500 cursor-not-allowed">
+            </div>
+        </div>
 
-<div x-show="f.department_id === 'other'" x-cloak>
-    <label class="label" for="custom_department">
-        Specify Department <span class="text-rose-500">*</span>
-    </label>
-    <input id="custom_department" type="text" name="custom_department" x-model="f.custom_department"
-           value="{{ old('custom_department') }}"
-           class="input" placeholder="e.g., Library, Sports Office, Registrar…">
-</div>
-    <div>
-        <label class="label">
-            Manpower
-            <span class="text-xs text-slate-400 font-normal">(assigned by lead)</span>
-        </label>
-        <input type="text"
-               value="— Not yet assigned —"
-               disabled
-               class="input bg-slate-100 text-slate-500 cursor-not-allowed">
-    </div>
-</div>
+        <div x-show="f.department_id === 'other'" x-cloak>
+            <label class="label" for="custom_department">
+                Specify Department <span class="text-rose-500">*</span>
+            </label>
+            <input id="custom_department" type="text" name="custom_department" x-model="f.custom_department"
+                   value="{{ old('custom_department') }}"
+                   class="input" placeholder="e.g., Library, Sports Office…">
+        </div>
 
-        {{-- Category with Other --}}
         <div>
             <label class="label" for="category">Category <span class="text-rose-500">*</span></label>
             <select id="category" name="category" x-model="f.category" required class="input">
@@ -100,20 +95,20 @@
         </div>
 
         <div x-show="f.category === 'other'" x-cloak>
-            <label class="label" for="custom_category">Specify Category <span class="text-rose-500">*</span></label>
+            <label class="label" for="custom_category">
+                Specify Category <span class="text-rose-500">*</span>
+            </label>
             <input id="custom_category" type="text" name="custom_category" x-model="f.custom_category"
                    value="{{ old('custom_category') }}"
-                   class="input" placeholder="e.g., painting, welding, glass repair…">
+                   class="input" placeholder="e.g., painting, welding…">
         </div>
 
-        {{-- Location --}}
         <div>
             <label class="label" for="location">Location</label>
             <input id="location" type="text" name="location" x-model="f.location" value="{{ old('location') }}"
                    class="input" placeholder="e.g., Room 201">
         </div>
 
-        {{-- Description --}}
         <div>
             <label class="label" for="description">Problem Description <span class="text-rose-500">*</span></label>
             <textarea id="description" name="description" x-model="f.description" rows="5" required minlength="10"
@@ -121,7 +116,6 @@
                       placeholder="Describe the problem in detail (at least 10 characters)…">{{ old('description') }}</textarea>
         </div>
 
-        {{-- Photo --}}
         <div>
             <label class="label" for="photo_before">Photo Evidence (Optional)</label>
             <input id="photo_before" type="file" name="photo_before" accept="image/*"
@@ -131,14 +125,12 @@
             <p class="text-xs text-slate-400 mt-1">JPG, PNG, or WebP. Max 4MB.</p>
         </div>
 
-        {{-- Date --}}
         <div>
             <label class="label">Date Reported</label>
             <input type="text" value="{{ now()->format('M d, Y h:i A') }}" disabled
                    class="input bg-slate-100 text-slate-500 cursor-not-allowed">
         </div>
 
-        {{-- Submit --}}
         <div class="flex flex-col sm:flex-row gap-3 pt-2">
             <button type="submit" class="btn-primary flex-1 py-3">Submit Request</button>
             <a href="{{ route('requests.index') }}" class="btn-secondary sm:w-auto">Cancel</a>
@@ -149,14 +141,19 @@
     <div x-show="scanOpen" x-cloak
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
          @keydown.escape.window="scanOpen = false">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col"
              @click.outside="scanOpen = false">
-            <div class="flex items-center justify-between p-5 border-b border-slate-200">
+
+            {{-- Header (fixed) --}}
+            <div class="flex items-center justify-between p-5 border-b border-slate-200 shrink-0">
                 <h2 class="font-bold text-lg text-slate-900">📷 Scan Paper Form</h2>
                 <button @click="scanOpen = false" type="button" class="btn-ghost">✕</button>
             </div>
 
-            <div class="p-6 space-y-4">
+            {{-- Scrollable body --}}
+            <div class="p-6 overflow-y-auto flex-1 space-y-4">
+
+                {{-- No image selected yet --}}
                 <template x-if="!scanImage">
                     <div>
                         <label class="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-50 transition">
@@ -167,7 +164,7 @@
                             </svg>
                             <span class="font-semibold text-slate-700">Take a photo or upload</span>
                             <span class="text-xs text-slate-400 mt-1">JPG / PNG / WebP — up to 8 MB</span>
-                            <input type="file" accept="image/*" capture="environment" class="hidden" @change="handleUpload($event)">
+                            <input type="file" accept="image/*" class="hidden" @change="handleUpload($event)">
                         </label>
                         <p class="text-xs text-slate-500 mt-3 text-center">
                             Tip: lay the paper flat, good lighting, no shadows.
@@ -175,10 +172,15 @@
                     </div>
                 </template>
 
+                {{-- Image selected --}}
                 <template x-if="scanImage">
-                    <div class="space-y-3">
-                        <img :src="scanImage" class="w-full rounded-lg border border-slate-200 max-h-64 object-contain bg-slate-50">
+                    <div class="space-y-4">
 
+                        {{-- Preview --}}
+                        <img :src="scanImage"
+                             class="w-full rounded-lg border border-slate-200 max-h-64 object-contain bg-slate-50">
+
+                        {{-- Action buttons --}}
                         <div class="flex gap-2">
                             <button type="button" @click="resetScan()" class="btn-secondary flex-1">Choose Another</button>
                             <button type="button" @click="runScan()" :disabled="scanLoading" class="btn-primary flex-1">
@@ -187,25 +189,38 @@
                             </button>
                         </div>
 
+                        {{-- Error --}}
                         <template x-if="scanError">
-                            <div class="bg-rose-50 border border-rose-200 text-rose-700 text-sm p-3 rounded-lg" x-text="scanError"></div>
+                            <div class="bg-rose-50 border border-rose-200 text-rose-700 text-sm p-3 rounded-lg"
+                                 x-text="scanError"></div>
                         </template>
 
+                        {{-- Extracted fields --}}
                         <template x-if="scanResult">
                             <div class="space-y-2">
                                 <div class="text-sm font-semibold text-slate-700">Extracted fields — review, then apply:</div>
                                 <template x-for="(val, key) in scanResult" :key="key">
                                     <div class="flex items-start gap-3 text-sm border border-slate-200 rounded-lg p-2">
-                                        <span class="w-40 text-slate-500 capitalize shrink-0" x-text="key.replace(/_/g, ' ')"></span>
+                                        <span class="w-40 text-slate-500 capitalize shrink-0"
+                                              x-text="key.replace(/_/g, ' ')"></span>
                                         <span class="flex-1 text-slate-800" x-text="val || '—'"></span>
                                     </div>
                                 </template>
-                                <button type="button" @click="applyScan()" class="btn-primary w-full mt-2">✓ Apply to Form</button>
                             </div>
                         </template>
+
                     </div>
                 </template>
+
             </div>
+
+            {{-- Footer with Apply (fixed) --}}
+            <template x-if="scanResult">
+                <div class="shrink-0 px-6 py-4 border-t border-slate-200 bg-white rounded-b-2xl">
+                    <button type="button" @click="applyScan()" class="btn-primary w-full">✓ Apply to Form</button>
+                </div>
+            </template>
+
         </div>
     </div>
 </div>
@@ -215,6 +230,8 @@ function requestForm() {
     return {
         f: {
             title: '', description: '', category: '', custom_category: '',
+            department_id: @json(old('department_id', auth()->user()->department_id)),
+            custom_department: @json(old('custom_department', '')),
             location: '', unit_no: '', tools_and_materials: '',
             estimated_budget: '', date_start: '', date_finish: '',
         },
@@ -238,13 +255,17 @@ function requestForm() {
         },
 
         async runScan() {
-            if (!this.scanFile) return;
+            if (!this.scanFile) {
+                this.scanError = 'No file selected. Please pick an image first.';
+                return;
+            }
+
             this.scanLoading = true;
             this.scanError = '';
             this.scanResult = null;
 
             const fd = new FormData();
-            fd.append('image', this.scanFile);
+            fd.append('image', this.scanFile, this.scanFile.name);
             fd.append('_token', document.querySelector('meta[name=csrf-token]').content);
 
             try {
@@ -253,8 +274,19 @@ function requestForm() {
                     body: fd,
                     headers: { 'Accept': 'application/json' },
                 });
-                const data = await res.json();
-                if (!res.ok || !data.ok) throw new Error(data.error || 'Scan failed');
+
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok) {
+                    if (res.status === 422 && data.errors) {
+                        const messages = Object.values(data.errors).flat().join(' | ');
+                        throw new Error('Validation: ' + messages);
+                    }
+                    throw new Error(data.error || ('HTTP ' + res.status));
+                }
+
+                if (!data.ok) throw new Error(data.error || 'Scan failed');
+
                 this.scanResult = data.fields;
             } catch (err) {
                 this.scanError = err.message;
@@ -266,13 +298,9 @@ function requestForm() {
             if (!this.scanResult) return;
             const r = this.scanResult;
 
-            // Title from paper's "Description of request"
             if (r.description) this.f.title = r.description;
+            if (r.unit_no)     this.f.location = 'Unit ' + r.unit_no;
 
-            // Location from "Unit No."
-            if (r.unit_no) this.f.location = 'Unit ' + r.unit_no;
-
-            // Category — match to enum or fall back to Other
             const validCats = ['electrical','carpentry','fabrication','aircon','plumbing','general'];
             const cat = (r.category || '').toLowerCase().trim();
             if (validCats.includes(cat)) {
@@ -285,7 +313,6 @@ function requestForm() {
                 this.f.category = 'general';
             }
 
-            // Hidden supervisor-only fields
             if (r.unit_no)             this.f.unit_no = r.unit_no;
             if (r.tools_and_materials) this.f.tools_and_materials = r.tools_and_materials;
             if (r.estimated_budget)    this.f.estimated_budget = r.estimated_budget;
