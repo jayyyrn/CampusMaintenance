@@ -15,76 +15,78 @@ use Gemini\Enums\MimeType;
 
 class RequestController extends Controller
 {
-    public function scan(Request $request)
-    {
-        $request->validate([
-            'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
+   public function scan(Request $request)
+{
+    $request->validate([
+        'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
+    ]);
+
+    try {
+        $image = $request->file('image');
+        $base64 = base64_encode(file_get_contents($image->getPathname()));
+        $mime = $image->getMimeType();
+
+        $schema = [
+            'title'               => 'Short summary of the request.',
+            'description'         => 'Detailed problem description.',
+            'category'            => 'ONE of: electrical, carpentry, fabrication, aircon, plumbing, general.',
+            'location'            => 'Room number or location.',
+            'unit_no'             => 'Unit No. value if present.',
+            'tools_and_materials' => 'Tools/materials if listed.',
+            'estimated_budget'    => 'Budget amount if listed.',
+            'date_start'          => 'START date if present.',
+            'date_finish'         => 'FINISH date if present.',
+        ];
+
+        $prompt = "You are reading an image of a maintenance request form. "
+                . "Extract the following fields and return them as JSON: "
+                . json_encode($schema)
+                . " Use empty string for anything you cannot find.";
+
+        $response = \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => 'Bearer ' . env('ZAI_API_KEY'),
+            'Content-Type'  => 'application/json',
+        ])->post('https://api.z.ai/api/paas/v4/chat/completions', [
+            'model' => 'glm-4.6v-flash',
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'text', 'text' => $prompt],
+                        ['type' => 'image_url', 'image_url' => ['url' => "data:{$mime};base64,{$base64}"]],
+                    ],
+                ],
+            ],
         ]);
 
-        try {
-            $image = $request->file('image');
+        if (!$response->successful()) {
+            throw new \Exception('Z.AI API error: ' . $response->body());
+        }
 
-            $blob = new Blob(
-                mimeType: MimeType::from($image->getMimeType()),
-                data: base64_encode(file_get_contents($image->getPathname()))
-            );
+        $content = $response->json('choices.0.message.content');
 
-            $schema = new Schema(
-                type: DataType::OBJECT,
-                properties: [
-                    'title'               => new Schema(type: DataType::STRING),
-                    'description'         => new Schema(type: DataType::STRING),
-                    'category'            => new Schema(type: DataType::STRING),
-                    'location'            => new Schema(type: DataType::STRING),
-                    'unit_no'             => new Schema(type: DataType::STRING),
-                    'tools_and_materials' => new Schema(type: DataType::STRING),
-                    'estimated_budget'    => new Schema(type: DataType::STRING),
-                    'date_start'          => new Schema(type: DataType::STRING),
-                    'date_finish'         => new Schema(type: DataType::STRING),
-                ],
-                required: ['title', 'description', 'category']
-            );
+        if (preg_match('/\{.*\}/s', $content, $matches)) {
+            $fields = json_decode($matches[0], true);
+        } else {
+            $fields = json_decode($content, true);
+        }
 
-            $config = new GenerationConfig(
-                responseMimeType: ResponseMimeType::APPLICATION_JSON,
-                responseSchema: $schema
-            );
+        if (!is_array($fields)) {
+            throw new \Exception('Could not parse Z.AI response as JSON.');
+        }
 
-            $prompt = <<<PROMPT
-You are reading an image that contains a maintenance request. The image could be:
-1. A full Philippine university "Job Order / Work Request Form"
-2. A simple list of handwritten or typed fields
-3. A photo, screenshot, or scanned document
+        return response()->json([
+            'ok'     => true,
+            'fields' => $fields,
+        ]);
 
-Extract the following fields and return them as JSON. Use "" for anything you can't find.
-
-- title: Short summary. If "Description of request" or "Problem description" is present, use that.
-- description: More detail.
-- category: ONE of electrical, carpentry, fabrication, aircon, plumbing, general.
-- location: Room number, unit number, or Department field.
-- unit_no: "Unit No." value if present, otherwise "".
-- tools_and_materials: Only if "TOOLS and MATERIALS" section exists, otherwise "".
-- estimated_budget: Only if "ESTIMATED BUDGET" field exists, otherwise "".
-- date_start: Only if "START" date exists, otherwise "".
-- date_finish: Only if "FINISH" date exists, otherwise "".
-PROMPT;
-
-           $result = Gemini::generativeModel('gemini-3.8-flash')
-                ->withGenerationConfig($config)
-                ->generateContent([$prompt, $blob]);
-
-            return response()->json([
-                'ok'     => true,
-                'fields' => $result->json(),
-            ]);
-
-       } catch (\Throwable $e) {
-    \Log::error('Gemini scan failed: ' . $e->getMessage());
-    return response()->json([
-        'ok'    => false,
-        'error' => 'Gemini error: ' . $e->getMessage(),
-    ], 422);
-}
+    } catch (\Throwable $e) {
+        \Log::error('Z.AI scan failed: ' . $e->getMessage());
+        return response()->json([
+            'ok'    => false,
+            'error' => 'Scan error: ' . $e->getMessage(),
+        ], 422);
+    }
 }
 
     public function index(Request $request)

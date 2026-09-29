@@ -6,6 +6,7 @@
     <p class="text-gray-500 mb-6">Ask about past fixes. The assistant learns from every saved diagnosis.</p>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {{-- LEFT: Ask + Answer --}}
         <div class="lg:col-span-2">
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <div class="mb-4">
@@ -20,7 +21,7 @@
                 </div>
 
                 <template x-if="answer">
-                    <div class="border-t pt-4">
+                    <div class="border-t pt-5">
                         <div class="flex items-center gap-2 mb-4">
                             <span class="text-sm font-bold text-gray-700">Answer</span>
                             <template x-if="confidence > 0">
@@ -33,7 +34,7 @@
                             </template>
                         </div>
 
-                        <div class="space-y-4">
+                        <div class="space-y-5">
                             <template x-for="(section, index) in formatAnswer(answer)" :key="index">
                                 <div>
                                     <h3 class="text-base font-semibold text-gray-900 mb-2"
@@ -48,17 +49,72 @@
             </div>
         </div>
 
+        {{-- RIGHT: Knowledge Base --}}
         <div>
-            <h2 class="text-sm font-bold text-gray-500 uppercase mb-3">Knowledge Base ({{ $kb->count() }})</h2>
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 max-h-[600px] overflow-y-auto divide-y">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Knowledge Base</h2>
+                <span class="text-xs font-bold bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">
+                    {{ $kb->count() }}
+                </span>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 max-h-[640px] overflow-y-auto">
                 @forelse($kb as $entry)
-                    <div class="p-4">
-                        <div class="text-xs font-mono text-gray-500">{{ $entry->request->request_code ?? '' }}</div>
-                        <div class="font-semibold text-sm capitalize">{{ $entry->request->category ?? '' }} — {{ $entry->request->title ?? '' }}</div>
-                        <div class="text-xs text-gray-500 mt-1 line-clamp-2">{{ Str::limit($entry->findings, 100) }}</div>
+                    @php
+                        $cat = $entry->request->category ?? 'general';
+                        $catColor = match($cat) {
+                            'aircon'      => 'bg-cyan-100 text-cyan-700',
+                            'electrical'  => 'bg-yellow-100 text-yellow-700',
+                            'plumbing'    => 'bg-blue-100 text-blue-700',
+                            'carpentry'   => 'bg-orange-100 text-orange-700',
+                            'fabrication' => 'bg-purple-100 text-purple-700',
+                            default       => 'bg-slate-100 text-slate-700',
+                        };
+                    @endphp
+                    <div class="p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
+                        <div class="flex items-start gap-3">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded {{ $catColor }}">
+                                        {{ $cat }}
+                                    </span>
+                                    <span class="text-[10px] font-mono text-slate-400">
+                                        {{ $entry->request->request_code ?? '' }}
+                                    </span>
+                                </div>
+
+                                <div class="font-semibold text-sm text-slate-900 line-clamp-2">
+                                    {{ $entry->request->title ?? 'Untitled request' }}
+                                </div>
+
+                                @if($entry->findings)
+                                    <div class="text-xs text-slate-500 mt-1.5 line-clamp-2 leading-relaxed">
+                                        {{ Str::limit($entry->findings, 120) }}
+                                    </div>
+                                @endif
+
+                                @if($entry->is_verified)
+                                    <div class="mt-2 flex items-center gap-1 text-[10px] font-bold text-emerald-600">
+                                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                        </svg>
+                                        VERIFIED
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
                     </div>
                 @empty
-                    <div class="p-6 text-center text-gray-400 text-sm">No solutions recorded yet.</div>
+                    <div class="p-10 text-center">
+                        <div class="w-14 h-14 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-3">
+                            <svg class="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                            </svg>
+                        </div>
+                        <p class="text-sm font-medium text-slate-500">No solutions recorded yet</p>
+                        <p class="text-xs text-slate-400 mt-1">Save a diagnosis with solution steps to grow the knowledge base.</p>
+                    </div>
                 @endforelse
             </div>
         </div>
@@ -73,10 +129,6 @@ function aiAssistant() {
         confidence: 0,
         loading: false,
 
-        // UI-only formatter. Parses the existing plain-text answer string
-        // (the one the controller already returns) into labeled sections and
-        // renders each section's body as simple HTML (bold, lists, links).
-        // It does NOT change the answer content itself.
         formatAnswer(raw) {
             if (!raw) return [];
 
@@ -108,23 +160,15 @@ function aiAssistant() {
                     html: this.renderBody(raw.slice(lastIndex).trim())
                 });
             } else {
-                // No **Label:** markers (e.g. the "no match" fallback text)
                 sections.push({ label: 'General Guidance', html: this.renderBody(raw.trim()) });
             }
 
             return sections;
         },
 
-        // Renders a plain-text body into clean HTML:
-        // - escapes user-derived text first (safe)
-        // - converts **bold** into <strong>
-        // - converts "- " or "• " lines into <ul><li>
-        // - converts "1. " numbered lines into <ol><li>
-        // - converts bare URLs and "Similar Fix: ..." lines into styled text
         renderBody(text) {
             if (!text) return '<p class="text-gray-400">—</p>';
 
-            // Escape HTML to prevent injection from AI/db content
             const esc = (s) => s
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
@@ -132,7 +176,7 @@ function aiAssistant() {
 
             const lines = esc(text).split(/\n/);
             let html = '';
-            let listType = null; // 'ul' | 'ol' | null
+            let listType = null;
 
             const closeList = () => {
                 if (listType) { html += `</${listType}>`; listType = null; }
@@ -143,18 +187,21 @@ function aiAssistant() {
 
                 if (line === '') { closeList(); continue; }
 
+                // Strip leading step numbers like "1." "1)" "1 -" "Step 1:" so we don't double-number
+                const cleaned = line.replace(/^(?:step\s+)?\d+\s*[\.\)\:\-]\s*/i, '');
+
                 // Bullet list item
                 const bullet = line.match(/^[-•*]\s+(.*)$/);
                 if (bullet) {
-                    if (listType !== 'ul') { closeList(); html += '<ul class="list-disc pl-5 space-y-1">'; listType = 'ul'; }
+                    if (listType !== 'ul') { closeList(); html += '<ul class="list-disc pl-5 space-y-1.5 my-2">'; listType = 'ul'; }
                     html += `<li>${this.inline(bullet[1])}</li>`;
                     continue;
                 }
 
-                // Numbered list item
-                const numbered = line.match(/^\d+\.\s+(.*)$/);
+                // Numbered list item (also captures "Step 1:" lines)
+                const numbered = line.match(/^(?:step\s+)?\d+\s*[\.\)\:\-]\s+(.*)$/i);
                 if (numbered) {
-                    if (listType !== 'ol') { closeList(); html += '<ol class="list-decimal pl-5 space-y-1">'; listType = 'ol'; }
+                    if (listType !== 'ol') { closeList(); html += '<ol class="list-decimal pl-5 space-y-1.5 my-2">'; listType = 'ol'; }
                     html += `<li>${this.inline(numbered[1])}</li>`;
                     continue;
                 }
@@ -167,11 +214,8 @@ function aiAssistant() {
             return html;
         },
 
-        // Inline formatting: **bold** and bare URLs inside a line
         inline(s) {
-            // Bold
             s = s.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>');
-            // Bare http(s) URLs → clickable, styled
             s = s.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener" class="text-orange-600 hover:text-orange-700 underline">$1</a>');
             return s;
         },
