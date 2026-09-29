@@ -21,8 +21,7 @@
             </div>
             <h1 class="text-2xl font-bold text-slate-900">Set a new password</h1>
             <p class="text-slate-500 text-sm mt-2">
-                ✓ Code verified for<br>
-                <span class="font-semibold text-slate-700">{{ $email }}</span>
+                ✓ Code verified. Choose a strong password for your account.
             </p>
         </div>
 

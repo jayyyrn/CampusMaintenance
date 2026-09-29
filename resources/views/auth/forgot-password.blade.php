@@ -21,7 +21,7 @@
             </div>
             <h1 class="text-2xl font-bold text-slate-900">Forgot your password?</h1>
             <p class="text-slate-500 text-sm mt-2">
-                Enter your email and we'll send you a 6-digit verification code.
+                Enter your <strong>username</strong>. We'll send a 6-digit code to the email registered to your account.
             </p>
         </div>
 
@@ -41,10 +41,13 @@
             @csrf
 
             <div>
-                <label class="label" for="email">Email Address</label>
-                <input id="email" type="email" name="email" value="{{ old('email') }}"
-                       required autofocus autocomplete="email"
-                       class="input" placeholder="you@example.com">
+                <label class="label" for="username">Username</label>
+                <input id="username" type="text" name="username" value="{{ old('username') }}"
+                       required autofocus autocomplete="username"
+                       class="input" placeholder="Enter your username">
+                <p class="text-xs text-slate-400 mt-2">
+                    This is the same username you use to log in.
+                </p>
             </div>
 
             <button type="submit" class="btn-primary w-full py-3 text-base">

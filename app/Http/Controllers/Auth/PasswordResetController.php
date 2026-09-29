@@ -12,20 +12,14 @@ use Illuminate\Support\Facades\Mail;
 
 class PasswordResetController extends Controller
 {
-    /** Code expiry in minutes */
     const CODE_EXPIRY_MINUTES = 15;
+    const MAX_ATTEMPTS        = 5;
 
-    /** Max wrong attempts before code is invalidated */
-    const MAX_ATTEMPTS = 5;
-
-    /** Session key holding the email being verified */
-    const SESSION_EMAIL = 'pwd_reset.email';
-
-    /** Session key holding the timestamp when code was verified */
+    const SESSION_USER_ID     = 'pwd_reset.user_id';
     const SESSION_VERIFIED_AT = 'pwd_reset.verified_at';
 
     // ═══════════════════════════════════════════════════════════════
-    // STEP 1 — Show email form
+    // STEP 1 — Show username form
     // ═══════════════════════════════════════════════════════════════
     public function showEmailForm()
     {
@@ -33,27 +27,41 @@ class PasswordResetController extends Controller
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // STEP 1b — Send code to email
+    // STEP 1b — Look up user by username, send code to their registered email
     // ═══════════════════════════════════════════════════════════════
     public function sendCode(Request $request)
     {
-        $request->validate(['email' => 'required|email']);
+        $request->validate([
+            'username' => 'required|string|max:50',
+        ]);
 
-        $email = strtolower(trim($request->email));
-        $user  = User::where('email', $email)->where('status', 'active')->first();
+              $username = trim($request->username);
+        $user     = User::where('username', $username)
+                        ->where('status', 'active')
+                        ->first();
 
-        // Always return the same message (prevents user enumeration)
+        // Reject non-existent / inactive usernames with a generic message.
+        // The message is deliberately vague ("invalid or inactive") so it does
+        // not confirm whether a username exists in the system.
         if (!$user) {
-            return redirect()->route('password.verify.form')
-                ->with('status', 'If that email exists, we sent a code.');
+            return back()
+                ->with('error', 'Username not found or account is inactive. Please check your username and try again.')
+                ->withInput();
+        }
+
+        // Require the account to have a real email on file
+        if (!$user->email || !filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
+            return back()
+                ->with('error', 'This account does not have a valid email address on file. Contact the administrator.')
+                ->withInput();
         }
 
         // Generate a 6-digit code
         $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
-        // Store hashed code, invalidating any previous code for this email
+        // Store hashed code, keyed by user_id
         DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $email],
+            ['user_id' => $user->user_id],
             [
                 'token'      => Hash::make($code),
                 'attempts'   => 0,
@@ -61,36 +69,41 @@ class PasswordResetController extends Controller
             ]
         );
 
-        // Send the email
+        // Send the code to the REGISTERED email (not user-typed)
         try {
-            Mail::to($email)->send(
+            Mail::to($user->email)->send(
                 new PasswordResetCodeMail($code, $user->full_name, self::CODE_EXPIRY_MINUTES)
             );
         } catch (\Throwable $e) {
             \Log::error('Password reset email failed: ' . $e->getMessage());
-            return back()->with('error', 'Could not send the code. Please check your email address and try again.');
+            return back()
+                ->with('error', 'Could not send the code. Please try again later.')
+                ->withInput();
         }
 
-        // Store email in session for the next step
-        session([self::SESSION_EMAIL => $email]);
+        // Store user_id + a masked version of their email for display
+        session([
+            self::SESSION_USER_ID    => $user->user_id,
+            'pwd_reset.masked_email' => $this->maskEmail($user->email),
+        ]);
 
         return redirect()->route('password.verify.form')
-            ->with('status', "We sent a 6-digit code to {$email}. Check your inbox (and spam).");
+            ->with('status', 'We sent a 6-digit code to your registered email. Check your inbox (and spam).');
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // STEP 2 — Show code input form
+    // STEP 2 — Show code form
     // ═══════════════════════════════════════════════════════════════
-    public function showCodeForm(Request $request)
+    public function showCodeForm()
     {
-        // If no email in session, redirect back to Step 1
-        if (!session(self::SESSION_EMAIL)) {
+        // Require a session that started the flow
+        if (!session()->has('pwd_reset.masked_email')) {
             return redirect()->route('password.request')
-                ->with('error', 'Please enter your email first.');
+                ->with('error', 'Please enter your username first.');
         }
 
         return view('auth.verify-code', [
-            'email' => session(self::SESSION_EMAIL),
+            'maskedEmail' => session('pwd_reset.masked_email'),
         ]);
     }
 
@@ -101,38 +114,41 @@ class PasswordResetController extends Controller
     {
         $request->validate(['code' => 'required|digits:6']);
 
-        $email = session(self::SESSION_EMAIL);
-        if (!$email) {
+        $userId = session(self::SESSION_USER_ID);
+
+        // If no user_id in session (failed enumeration OR session lost), fail silently
+        if (!$userId) {
             return redirect()->route('password.request')
-                ->with('error', 'Session expired. Please start over.');
+                ->with('error', 'The code is invalid or has expired. Please try again.');
         }
 
-        $row = DB::table('password_reset_tokens')->where('email', $email)->first();
+        $row = DB::table('password_reset_tokens')->where('user_id', $userId)->first();
 
         if (!$row) {
             return redirect()->route('password.request')
                 ->with('error', 'No active reset request. Please start over.');
         }
 
-        // Expiry check
+        // Expiry
         if (now()->diffInMinutes($row->created_at) > self::CODE_EXPIRY_MINUTES) {
-            DB::table('password_reset_tokens')->where('email', $email)->delete();
-            session()->forget(self::SESSION_EMAIL);
+            DB::table('password_reset_tokens')->where('user_id', $userId)->delete();
+            session()->forget([self::SESSION_USER_ID, 'pwd_reset.masked_email']);
             return redirect()->route('password.request')
                 ->with('error', 'The code has expired. Please request a new one.');
         }
 
-        // Attempts check (invalidated after 5 wrong)
+        // Attempts
         if ($row->attempts >= self::MAX_ATTEMPTS) {
-            DB::table('password_reset_tokens')->where('email', $email)->delete();
-            session()->forget(self::SESSION_EMAIL);
+            DB::table('password_reset_tokens')->where('user_id', $userId)->delete();
+            session()->forget([self::SESSION_USER_ID, 'pwd_reset.masked_email']);
             return redirect()->route('password.request')
                 ->with('error', 'Too many incorrect attempts. Please request a new code.');
         }
 
-        // Compare hashes
+        // Compare hash
         if (!Hash::check($request->code, $row->token)) {
-            DB::table('password_reset_tokens')->where('email', $email)
+            DB::table('password_reset_tokens')
+                ->where('user_id', $userId)
                 ->increment('attempts');
 
             $remaining = self::MAX_ATTEMPTS - ($row->attempts + 1);
@@ -144,10 +160,8 @@ class PasswordResetController extends Controller
             ]);
         }
 
-        // ✅ Code correct — mark session as verified
-        session([
-            self::SESSION_VERIFIED_AT => now()->timestamp,
-        ]);
+        // ✅ Correct — mark session as verified
+        session([self::SESSION_VERIFIED_AT => now()->timestamp]);
 
         return redirect()->route('password.reset.form');
     }
@@ -155,22 +169,21 @@ class PasswordResetController extends Controller
     // ═══════════════════════════════════════════════════════════════
     // STEP 3 — Show new password form
     // ═══════════════════════════════════════════════════════════════
-    public function showResetForm(Request $request)
-    {
-        $email      = session(self::SESSION_EMAIL);
-        $verifiedAt = session(self::SESSION_VERIFIED_AT);
+    public function showResetForm()
+{
+    $userId     = session(self::SESSION_USER_ID);
+    $verifiedAt = session(self::SESSION_VERIFIED_AT);
 
-        // Must have passed Step 2 within the last 15 minutes
-        if (!$email || !$verifiedAt || (now()->timestamp - $verifiedAt) > (self::CODE_EXPIRY_MINUTES * 60)) {
-            session()->forget([self::SESSION_EMAIL, self::SESSION_VERIFIED_AT]);
-            return redirect()->route('password.request')
-                ->with('error', 'Your verification expired. Please start over.');
-        }
-
-        return view('auth.reset-password', [
-            'email' => $email,
-        ]);
+    if (!$userId || !$verifiedAt
+        || (now()->timestamp - $verifiedAt) > (self::CODE_EXPIRY_MINUTES * 60)) {
+        session()->forget([self::SESSION_USER_ID, self::SESSION_VERIFIED_AT, 'pwd_reset.masked_email']);
+        return redirect()->route('password.request')
+            ->with('error', 'Your verification expired. Please start over.');
     }
+
+    // Note: no variables passed. The Blade uses only session data + validation errors.
+    return view('auth.reset-password');
+}
 
     // ═══════════════════════════════════════════════════════════════
     // STEP 3b — Update password
@@ -181,19 +194,19 @@ class PasswordResetController extends Controller
             'password' => 'required|string|min:6|confirmed',
         ]);
 
-        $email      = session(self::SESSION_EMAIL);
+        $userId     = session(self::SESSION_USER_ID);
         $verifiedAt = session(self::SESSION_VERIFIED_AT);
 
-        // Must have passed Step 2
-        if (!$email || !$verifiedAt || (now()->timestamp - $verifiedAt) > (self::CODE_EXPIRY_MINUTES * 60)) {
-            session()->forget([self::SESSION_EMAIL, self::SESSION_VERIFIED_AT]);
+        if (!$userId || !$verifiedAt
+            || (now()->timestamp - $verifiedAt) > (self::CODE_EXPIRY_MINUTES * 60)) {
+            session()->forget([self::SESSION_USER_ID, self::SESSION_VERIFIED_AT, 'pwd_reset.masked_email']);
             return redirect()->route('password.request')
                 ->with('error', 'Your verification expired. Please start over.');
         }
 
-        $user = User::where('email', $email)->where('status', 'active')->first();
+        $user = User::where('user_id', $userId)->where('status', 'active')->first();
         if (!$user) {
-            session()->forget([self::SESSION_EMAIL, self::SESSION_VERIFIED_AT]);
+            session()->forget([self::SESSION_USER_ID, self::SESSION_VERIFIED_AT, 'pwd_reset.masked_email']);
             return redirect()->route('password.request')
                 ->with('error', 'Account not found. Please start over.');
         }
@@ -202,11 +215,9 @@ class PasswordResetController extends Controller
         try {
             $user->update(['password' => $request->password]); // hashed cast handles hashing
 
-            // Invalidate the code
-            DB::table('password_reset_tokens')->where('email', $email)->delete();
+            DB::table('password_reset_tokens')->where('user_id', $userId)->delete();
 
-            // Clear session flags
-            session()->forget([self::SESSION_EMAIL, self::SESSION_VERIFIED_AT]);
+            session()->forget([self::SESSION_USER_ID, self::SESSION_VERIFIED_AT, 'pwd_reset.masked_email']);
 
             audit('PASSWORD_RESET', 'user', $user->user_id, $user->username);
 
@@ -223,27 +234,26 @@ class PasswordResetController extends Controller
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // RESEND — Generate and send a new code
+    // RESEND — Generate and send a fresh code
     // ═══════════════════════════════════════════════════════════════
-    public function resendCode(Request $request)
+    public function resendCode()
     {
-        $email = session(self::SESSION_EMAIL);
-        if (!$email) {
+        $userId = session(self::SESSION_USER_ID);
+        if (!$userId) {
             return redirect()->route('password.request')
                 ->with('error', 'Session expired. Please start over.');
         }
 
-        $user = User::where('email', $email)->where('status', 'active')->first();
-        if (!$user) {
+        $user = User::where('user_id', $userId)->where('status', 'active')->first();
+        if (!$user || !$user->email) {
             return redirect()->route('password.request')
                 ->with('error', 'Account not found. Please start over.');
         }
 
-        // Generate a fresh code
         $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
         DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $email],
+            ['user_id' => $userId],
             [
                 'token'      => Hash::make($code),
                 'attempts'   => 0,
@@ -252,7 +262,7 @@ class PasswordResetController extends Controller
         );
 
         try {
-            Mail::to($email)->send(
+            Mail::to($user->email)->send(
                 new PasswordResetCodeMail($code, $user->full_name, self::CODE_EXPIRY_MINUTES)
             );
         } catch (\Throwable $e) {
@@ -260,6 +270,27 @@ class PasswordResetController extends Controller
             return back()->with('error', 'Could not resend the code. Please try again.');
         }
 
-        return back()->with('status', 'A new code has been sent to your email.');
+        // Refresh masked email in session (no change, but safe)
+        session(['pwd_reset.masked_email' => $this->maskEmail($user->email)]);
+
+        return back()->with('status', 'A new code has been sent to your registered email.');
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Helper — Mask an email address
+    // ═══════════════════════════════════════════════════════════════
+    private function maskEmail(string $email): string
+    {
+        [$name, $domain] = explode('@', $email, 2);
+
+        if (strlen($name) <= 2) {
+            $masked = substr($name, 0, 1) . '*';
+        } else {
+            $masked = substr($name, 0, 1)
+                    . str_repeat('*', max(1, strlen($name) - 2))
+                    . substr($name, -1);
+        }
+
+        return $masked . '@' . $domain;
     }
 }

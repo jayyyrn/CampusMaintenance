@@ -21,8 +21,11 @@
             </div>
             <h1 class="text-2xl font-bold text-slate-900">Check your email</h1>
             <p class="text-slate-500 text-sm mt-2">
-                We sent a 6-digit code to<br>
-                <span class="font-semibold text-slate-700">{{ $email }}</span>
+                If the account exists, we sent a 6-digit code to<br>
+                <span class="font-semibold text-slate-700">{{ $maskedEmail }}</span>
+            </p>
+            <p class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4 inline-block">
+                💡 Check your <strong>Spam</strong> or <strong>Junk</strong> folder if you don't see it.
             </p>
         </div>
 
@@ -78,7 +81,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                 </svg>
-                Use a different email
+                Use a different username
             </a>
         </div>
     </div>
