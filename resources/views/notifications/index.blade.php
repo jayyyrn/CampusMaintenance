@@ -42,8 +42,10 @@
                 $isUnread = !$n->is_read;
             @endphp
 
-            {{-- WHOLE ROW is clickable --}}
             <a href="{{ $href }}"
+               data-notification-id="{{ $n->notification_id }}"
+               data-unread="{{ $isUnread ? '1' : '0' }}"
+               onclick="handleNotificationClick(event, this)"
                class="flex items-start gap-4 p-5 border-b border-slate-100 last:border-0
                       hover:bg-slate-50 active:bg-slate-100 transition
                       {{ $isUnread ? 'bg-brand-50/40 border-l-4 border-l-brand-500' : '' }}">
@@ -84,4 +86,35 @@
             </div>
         @endforelse
     </div>
+
+    <script>
+        function handleNotificationClick(event, el) {
+            const id = el.dataset.notificationId;
+            const wasUnread = el.dataset.unread === '1';
+
+            if (!wasUnread) return;
+
+            event.preventDefault();
+
+            fetch('/notifications/' + id + '/read', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                },
+            })
+            .then(res => res.json())
+            .then(data => {
+                window.dispatchEvent(new CustomEvent('notification-count-updated', {
+                    detail: { count: data.count }
+                }));
+            })
+            .catch(() => {})
+            .finally(() => {
+                window.location.href = el.getAttribute('href');
+            });
+        }
+    </script>
 @endsection

@@ -21,8 +21,13 @@ class NotificationController extends Controller
             Notification::where('user_id', $request->user()->user_id)->update(['is_read' => true]);
         }
 
-        // Bust the unread count cache
         cache()->forget("notif_unread_{$request->user()->user_id}");
+
+        if ($request->wantsJson()) {
+            $count = Notification::where('user_id', $request->user()->user_id)
+                ->where('is_read', false)->count();
+            return response()->json(['ok' => true, 'count' => $count]);
+        }
 
         return back()->with('success', 'Marked as read.');
     }

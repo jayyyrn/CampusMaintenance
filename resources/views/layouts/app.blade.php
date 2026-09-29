@@ -128,37 +128,37 @@
 
     {{-- Notification bell polling component --}}
     <script>
-        function notificationBell(initialCount) {
-            return {
-                count: initialCount,
-                intervalId: null,
-                startPolling() {
-                    // Poll every 15 seconds
-                    this.intervalId = setInterval(() => this.refresh(), 15000);
+    function notificationBell(initialCount) {
+        return {
+            count: initialCount,
+            intervalId: null,
+            startPolling() {
+                this.intervalId = setInterval(() => this.refresh(), 15000);
 
-                    // Refresh immediately when the tab regains focus
-                    document.addEventListener('visibilitychange', () => {
-                        if (!document.hidden) this.refresh();
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) this.refresh();
+                });
+
+                window.addEventListener('notification-count-updated', (e) => {
+                    this.count = e.detail.count;
+                });
+            },
+            async refresh() {
+                try {
+                    const res = await fetch('{{ route('notifications.unread_count') }}', {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
                     });
-                },
-                async refresh() {
-                    try {
-                        const res = await fetch('{{ route('notifications.unread_count') }}', {
-                            headers: {
-                                'Accept': 'application/json',
-                                'X-Requested-With': 'XMLHttpRequest',
-                            },
-                        });
-                        if (!res.ok) return;
-                        const data = await res.json();
-                        this.count = data.count;
-                    } catch (e) {
-                        // silent fail
-                    }
-                },
-            }
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    this.count = data.count;
+                } catch (e) {}
+            },
         }
-    </script>
+    }
+</script>
 
 </body>
 </html>
